@@ -191,7 +191,8 @@ class TelegramBot:
             kind="voice",
             voice_path=tmp_path,
             source=_source_for(uid),
-            tags=["task/voice"],
+            # task/transcribe triggers WhisperClient via label_watcher (issue #29)
+            tags=["task/transcribe"],
         )
         await self._do_ingest_and_reply(update, msg)
 

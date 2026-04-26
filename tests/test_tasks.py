@@ -39,7 +39,7 @@ def _note_with_url(tmp_path: Path) -> FakeNote:
 
 
 def test_registry_keys() -> None:
-    assert set(TASK_REGISTRY) == {"audio", "report", "slides", "video", "flashcards"}
+    assert set(TASK_REGISTRY) == {"audio", "report", "slides", "video", "flashcards", "transcribe"}
 
 
 @pytest.mark.parametrize(
