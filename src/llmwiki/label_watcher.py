@@ -6,12 +6,17 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from llmwiki import ingest
+from llmwiki.im.notify import push_telegram
 from llmwiki.vault import Note, Vault
+
+if TYPE_CHECKING:
+    from llmwiki.im.config import ImConfig
 
 
 class _MdHandler(FileSystemEventHandler):
@@ -41,9 +46,11 @@ class LabelWatcher:
         self,
         vault: Vault,
         task_registry: dict[str, Callable[[Note], dict[str, Path]]] | None = None,
+        im_config: "ImConfig | None" = None,
     ) -> None:
         self.vault = vault
         self._registry = task_registry
+        self._im_config = im_config
         self._queue: queue.Queue[Path] = queue.Queue()
         self._observer: Observer | None = None
         self._worker: threading.Thread | None = None
@@ -148,6 +155,13 @@ class LabelWatcher:
             f"# NotebookLM Session Expired\n\n- when: {ts}\n- note: {note_path}\n",
             encoding="utf-8",
         )
+        if self._im_config is not None and self._im_config.telegram is not None:
+            push_telegram(
+                "⚠️ NotebookLM session expired. 请运行 `npx notebooklm export-session`.",
+                cfg=self._im_config.telegram,
+                vault_root=self.vault.root,
+                throttle_key="session_expired",
+            )
 
     def _process_note(self, note: Note) -> None:
         registry = self._resolve_registry()

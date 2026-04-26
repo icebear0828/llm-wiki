@@ -17,6 +17,7 @@ url_fetch_timeout = 30
 [telegram]
 bot_token = ""               # or set env LLMWIKI_TG_TOKEN
 allowed_user_ids = []        # whitelist; empty = anyone
+# notify_chat_id = 12345  # 给 bot 发条消息后从 https://api.telegram.org/bot<token>/getUpdates 拿
 [telegram.command_default_tags]
 # audio = ["task/audio"]
 # report = ["task/report"]
@@ -28,6 +29,7 @@ class TelegramConfig:
     bot_token: str = ""
     allowed_user_ids: list[int] = field(default_factory=list)
     command_default_tags: dict[str, list[str]] = field(default_factory=dict)
+    notify_chat_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -82,10 +84,16 @@ class ImConfig:
                 if isinstance(v, list):
                     command_default_tags[str(k)] = [str(x) for x in v if isinstance(x, (str, int))]
 
+        notify_chat_id_raw = tg_raw.get("notify_chat_id")
+        notify_chat_id: int | None = None
+        if isinstance(notify_chat_id_raw, int) and not isinstance(notify_chat_id_raw, bool):
+            notify_chat_id = notify_chat_id_raw
+
         telegram = TelegramConfig(
             bot_token=bot_token,
             allowed_user_ids=allowed_ids,
             command_default_tags=command_default_tags,
+            notify_chat_id=notify_chat_id,
         )
 
         return cls(
