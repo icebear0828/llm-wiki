@@ -55,7 +55,7 @@ def _set_metadata(note: NoteLike, transcript: Transcript) -> None:
     metadata["stt_model"] = "mlx-whisper-large-v3"
 
 
-def run(note: NoteLike) -> dict[str, Path]:
+def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
     vault_root = _vault_root_for(note)
     audio_path = _find_audio(note, vault_root)
 

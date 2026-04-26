@@ -44,7 +44,7 @@ def test_note_roundtrip(vault_dir: Path) -> None:
     n = Note(p)
     assert n.title == "Hi"
     assert n.tags == ["task/audio", "foo"]
-    assert n.task_tags == ["audio"]
+    assert n.task_tags == [("audio", None)]
     assert n.status == "pending"
     assert n.source_url == "https://x"
     assert n.body.strip() == "body text"
@@ -85,6 +85,39 @@ def test_atomic_write_no_tmp(vault_dir: Path) -> None:
     n.save()
     leftover = list(vault_dir.glob("**/*.tmp"))
     assert leftover == []
+
+
+def test_task_tags_with_arg(vault_dir: Path) -> None:
+    p = vault_dir / "raw" / "n.md"
+    _write_note(
+        p,
+        "tags:\n  - task/source-add:nb-123\n  - task/audio\n  - foo\nstatus: pending\n",
+    )
+    n = Note(p)
+    assert n.task_tags == [("source-add", "nb-123"), ("audio", None)]
+
+
+def test_task_tags_split_on_first_colon_only(vault_dir: Path) -> None:
+    p = vault_dir / "raw" / "n.md"
+    _write_note(
+        p,
+        "tags:\n  - 'task/foo:a:b:c'\nstatus: pending\n",
+    )
+    n = Note(p)
+    assert n.task_tags == [("foo", "a:b:c")]
+
+
+def test_remove_task_removes_parameterized_tag(vault_dir: Path) -> None:
+    p = vault_dir / "raw" / "n.md"
+    _write_note(
+        p,
+        "tags:\n  - task/source-add:nb-123\n  - task/audio\nstatus: pending\n",
+    )
+    n = Note(p)
+    n.remove_task("source-add")
+    n.save()
+    n2 = Note(p)
+    assert n2.tags == ["task/audio"]
 
 
 def test_source_file_resolved(vault_dir: Path) -> None:

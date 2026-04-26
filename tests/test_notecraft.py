@@ -65,6 +65,40 @@ def test_argv_topic_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert "--topic" in argv and argv[argv.index("--topic") + 1] == "quantum"
 
 
+def test_argv_includes_subcommand(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, list[str]] = {}
+    _patch_run(monkeypatch, captured=captured)
+    notecraft.run(
+        "source",
+        subcommand="add",
+        source=NoteSource(url="https://example.com/x"),
+        out_dir=tmp_path,
+        extra_args=["nb-1"],
+        expect_artifact=False,
+    )
+    argv = captured["argv"]
+    assert argv[0:4] == ["npx", "notebooklm", "source", "add"]
+    assert argv[-1] == "nb-1"
+    assert argv.index("--transport") == 4
+
+
+def test_expect_artifact_false_returns_outdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_run(monkeypatch)
+    result = notecraft.run(
+        "source",
+        subcommand="add",
+        source=NoteSource(url="https://x"),
+        out_dir=tmp_path,
+        extra_args=["nb-1"],
+        expect_artifact=False,
+    )
+    assert result == tmp_path
+
+
 def test_session_expired(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_run(monkeypatch, returncode=1, stderr="Error: No session available, run export-session")
     with pytest.raises(SessionExpired):
