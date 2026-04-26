@@ -87,3 +87,37 @@ def test_scan_once_no_task_tags_skipped(vault: Vault) -> None:
     watcher.scan_once()
     assert p.exists()
     assert not (vault.wiki / "x.md").exists()
+
+
+def test_scan_once_enqueues_when_worker_alive(vault: Vault) -> None:
+    # Regression: previously scan_once called _process_note inline from the
+    # main thread, racing with the watchdog-driven worker on the same file
+    # (caused duplicate task runs). Now it enqueues so processing stays
+    # serialized on the worker thread.
+    import threading
+
+    watcher = LabelWatcher(vault, task_registry={})
+    fake_worker = threading.Thread(target=lambda: None)
+    fake_worker.start()
+    fake_worker.join()
+    # Replace the joined thread with a still-alive one
+    alive = threading.Event()
+    started = threading.Event()
+
+    def hold() -> None:
+        started.set()
+        alive.wait()
+
+    t = threading.Thread(target=hold)
+    t.start()
+    started.wait()
+    watcher._worker = t
+    try:
+        _make_note(vault, tag="fake", name="enqueue-me.md")
+        watcher.scan_once()
+        assert watcher._queue.qsize() == 1
+        assert (vault.raw / "enqueue-me.md").exists()
+        assert not (vault.wiki / "enqueue-me.md").exists()
+    finally:
+        alive.set()
+        t.join()

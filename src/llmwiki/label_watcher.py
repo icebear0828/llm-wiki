@@ -70,6 +70,8 @@ class LabelWatcher:
         self._worker = threading.Thread(target=self._run_worker, daemon=True)
         self._worker.start()
         self.scan_once()
+
+    def run_forever(self) -> None:
         try:
             while not self._stop_event.is_set():
                 self._stop_event.wait(0.5)
@@ -112,10 +114,18 @@ class LabelWatcher:
             self._process_note(note)
 
     def scan_once(self) -> None:
+        # If a worker thread is alive, enqueue paths so processing stays serialized
+        # on that thread and cannot race with watchdog-triggered runs on the same
+        # file. If there is no worker (e.g. tests calling scan_once directly),
+        # process inline.
+        worker_alive = self._worker is not None and self._worker.is_alive()
         for d in (self.vault.raw, self.vault.wiki):
             if not d.is_dir():
                 continue
             for path in sorted(d.glob("*.md")):
+                if worker_alive:
+                    self._queue.put(path)
+                    continue
                 try:
                     note = Note(path)
                 except Exception:
