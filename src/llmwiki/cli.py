@@ -508,5 +508,119 @@ def im_http(
     server.run()
 
 
+@im_app.command("telegram")
+def im_telegram(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    import asyncio
+
+    from llmwiki.im.config import ImConfig
+    from llmwiki.im.telegram_bot import TelegramBot
+    from llmwiki.vault import Vault
+
+    root = _discover_vault_root(vault_path)
+    cfg = ImConfig.load(root)
+    if not cfg.telegram.bot_token:
+        console.print(
+            "[red]telegram bot_token is empty[/red] — set env "
+            "[bold]LLMWIKI_TG_TOKEN[/bold] or edit im.toml [telegram] bot_token"
+        )
+        raise typer.Exit(code=1)
+    vault = Vault(root)
+    bot = TelegramBot(vault, cfg)
+    console.print("[green]telegram bot starting (polling)…[/green]")
+    try:
+        asyncio.run(bot.run_forever())
+    except KeyboardInterrupt:
+        console.print("[yellow]stopped[/yellow]")
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]telegram bot error:[/red] {e}")
+        raise typer.Exit(code=1) from e
+
+
+@im_app.command("start")
+def im_start(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int | None = typer.Option(None, "--port", help="Override im.toml http_port"),
+) -> None:
+    import asyncio
+
+    import uvicorn
+
+    from llmwiki.im.config import ImConfig
+    from llmwiki.im.http_endpoint import create_app
+    from llmwiki.im.telegram_bot import TelegramBot
+    from llmwiki.vault import Vault
+
+    root = _discover_vault_root(vault_path)
+    cfg = ImConfig.load(root)
+    if port is not None:
+        from dataclasses import replace
+
+        cfg = replace(cfg, http_port=port)
+    vault = Vault(root)
+    fastapi_app = create_app(vault, cfg)
+    server = uvicorn.Server(
+        uvicorn.Config(fastapi_app, host=host, port=cfg.http_port, log_level="info")
+    )
+
+    bot: TelegramBot | None = None
+    if cfg.telegram.bot_token:
+        bot = TelegramBot(vault, cfg)
+    else:
+        console.print(
+            "[yellow]warning:[/yellow] telegram bot_token empty — running HTTP only "
+            "(set LLMWIKI_TG_TOKEN to enable telegram)"
+        )
+
+    async def _main() -> None:
+        http_task = asyncio.create_task(server.serve(), name="http")
+        console.print(f"[green][http] ready[/green] http://{host}:{cfg.http_port}")
+        tg_task: asyncio.Task[None] | None = None
+        if bot is not None:
+            await bot.start()
+            console.print("[green][telegram] ready[/green] (polling)")
+            tg_task = asyncio.create_task(bot.run_forever(), name="telegram")
+
+        loop = asyncio.get_running_loop()
+        stop_event = asyncio.Event()
+
+        def _shutdown() -> None:
+            stop_event.set()
+
+        for sig_name in ("SIGINT", "SIGTERM"):
+            try:
+                loop.add_signal_handler(getattr(signal, sig_name), _shutdown)
+            except (NotImplementedError, AttributeError):
+                pass
+
+        done_task = asyncio.create_task(stop_event.wait(), name="stop")
+        watch = [http_task, done_task]
+        if tg_task is not None:
+            watch.append(tg_task)
+        await asyncio.wait(watch, return_when=asyncio.FIRST_COMPLETED)
+
+        console.print("[yellow]shutting down…[/yellow]")
+        server.should_exit = True
+        if bot is not None:
+            await bot.stop()
+        if tg_task is not None:
+            tg_task.cancel()
+            try:
+                await tg_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+        try:
+            await http_task
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        asyncio.run(_main())
+    except KeyboardInterrupt:
+        console.print("[yellow]stopped[/yellow]")
+
+
 if __name__ == "__main__":
     app()
