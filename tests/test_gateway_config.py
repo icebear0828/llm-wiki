@@ -86,3 +86,41 @@ def test_write_default_template_is_idempotent(tmp_path: Path) -> None:
     path2, written2 = write_default_template(tmp_path)
     assert written2 is False
     assert path2.read_text(encoding="utf-8") == contents
+
+
+def test_default_template_mentions_rag_fields(tmp_path: Path) -> None:
+    path, _ = write_default_template(tmp_path)
+    contents = path.read_text(encoding="utf-8")
+    assert "rag_enabled" in contents
+    assert "rag_top_k" in contents
+    assert "rag_min_query_length" in contents
+
+
+def test_defaults_have_rag_enabled_true() -> None:
+    cfg = GatewayConfig()
+    assert cfg.rag_enabled is True
+    assert cfg.rag_top_k == 5
+    assert cfg.rag_min_query_length == 10
+
+
+def test_load_rag_disabled_flag(tmp_path: Path) -> None:
+    (tmp_path / CONFIG_FILENAME).write_text(
+        """
+rag_enabled = false
+rag_top_k = 7
+rag_min_query_length = 25
+""",
+        encoding="utf-8",
+    )
+    cfg = GatewayConfig.load(tmp_path)
+    assert cfg.rag_enabled is False
+    assert cfg.rag_top_k == 7
+    assert cfg.rag_min_query_length == 25
+
+
+def test_load_defaults_preserve_rag_enabled(tmp_path: Path) -> None:
+    (tmp_path / CONFIG_FILENAME).write_text("port = 8080\n", encoding="utf-8")
+    cfg = GatewayConfig.load(tmp_path)
+    assert cfg.rag_enabled is True
+    assert cfg.rag_top_k == 5
+    assert cfg.rag_min_query_length == 10
