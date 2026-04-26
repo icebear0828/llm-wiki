@@ -20,8 +20,8 @@ _EXPECTED_EXTS: dict[str, tuple[str, ...]] = {
     "video": (".mp4",),
     "slides": (".pdf",),
     "report": (".md", ".txt"),
-    "flashcards": (".json", ".md"),
-    "quiz": (".json", ".md"),
+    "flashcards": (".json", ".md", ".html"),
+    "quiz": (".json", ".md", ".html"),
     "infographic": (".png", ".jpg", ".jpeg", ".svg", ".html"),
     "data-table": (".csv", ".md", ".json"),
 }
@@ -127,6 +127,7 @@ def run(
 ) -> Path:
     _ensure_installed()
     out_dir.mkdir(parents=True, exist_ok=True)
+    output_args: list[str] = ["-o", str(out_dir)] if expect_artifact else []
     argv = [
         "npx",
         "notebooklm",
@@ -135,8 +136,7 @@ def run(
         "--transport",
         "auto",
         *source.as_args(),
-        "-o",
-        str(out_dir),
+        *output_args,
         *(extra_args or []),
     ]
     start = time.time()

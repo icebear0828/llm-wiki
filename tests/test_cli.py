@@ -184,13 +184,16 @@ def test_run_task_calls_process_note(
     fake_watcher_instance = MagicMock()
     fake_watcher_cls = MagicMock(return_value=fake_watcher_instance)
     fake_vault_cls = MagicMock()
+    fake_note_instance = MagicMock()
+    fake_note_cls = MagicMock(return_value=fake_note_instance)
 
     fake_lw_module = MagicMock(LabelWatcher=fake_watcher_cls)
-    fake_vault_module = MagicMock(Vault=fake_vault_cls)
+    fake_vault_module = MagicMock(Vault=fake_vault_cls, Note=fake_note_cls)
 
     monkeypatch.setitem(__import__("sys").modules, "llmwiki.label_watcher", fake_lw_module)
     monkeypatch.setitem(__import__("sys").modules, "llmwiki.vault", fake_vault_module)
 
     result = runner.invoke(app, ["run-task", str(note), "--vault", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    fake_watcher_instance._process_note.assert_called_once()
+    fake_note_cls.assert_called_once()
+    fake_watcher_instance._process_note.assert_called_once_with(fake_note_instance)
