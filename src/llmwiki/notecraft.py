@@ -7,6 +7,8 @@ Setup once per checkout:
 """
 from __future__ import annotations
 
+import datetime as _dt
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -16,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _CLI_RELATIVE = Path("node_modules/notebooklm-client/dist/cli.js")
 
 _EXPECTED_EXTS: dict[str, tuple[str, ...]] = {
-    "audio": (".mp3", ".wav", ".m4a"),
+    "audio": (".mp3", ".wav", ".m4a", ".mp4"),
     "video": (".mp4",),
     "slides": (".pdf",),
     "report": (".md", ".txt"),
@@ -94,6 +96,34 @@ def _classify(stderr: str) -> type[NotecraftError]:
     return NotecraftError
 
 
+def _write_debug_log(
+    cmd: str,
+    argv: list[str],
+    *,
+    returncode: int | None,
+    stdout: str,
+    stderr: str,
+    duration: float,
+    timed_out: bool = False,
+) -> None:
+    log_dir = os.environ.get("NOTECRAFT_DEBUG_LOG_DIR")
+    if not log_dir:
+        return
+    target = Path(log_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    ts = _dt.datetime.now(_dt.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    path = target / f"{ts}-{cmd}.log"
+    rc_repr = "TIMEOUT" if timed_out else str(returncode)
+    body = (
+        f"argv={' '.join(argv)}\n"
+        f"returncode={rc_repr}\n"
+        f"duration_s={duration:.2f}\n"
+        f"--- stdout ---\n{stdout}\n"
+        f"--- stderr ---\n{stderr}\n"
+    )
+    path.write_text(body, encoding="utf-8")
+
+
 def _newest_artifact(out_dir: Path, cmd: str, since: float) -> Path:
     exts = _EXPECTED_EXTS.get(cmd)
     candidates: list[Path] = []
@@ -115,6 +145,20 @@ def _newest_artifact(out_dir: Path, cmd: str, since: float) -> Path:
     return candidates[0]
 
 
+@dataclass
+class RunResult:
+    """Outcome of a notecraft.run call.
+
+    `artifact` is None when expect_artifact=False (the command produced no
+    local file); callers wanting the directory should use `out_dir` instead.
+    """
+
+    artifact: Path | None
+    out_dir: Path
+    stdout: str
+    stderr: str
+
+
 def run(
     cmd: str,
     *,
@@ -124,10 +168,14 @@ def run(
     timeout: float = 600.0,
     subcommand: str | None = None,
     expect_artifact: bool = True,
-) -> Path:
+    pass_output_dir: bool | None = None,
+    return_full: bool = False,
+) -> Path | RunResult:
     _ensure_installed()
     out_dir.mkdir(parents=True, exist_ok=True)
-    output_args: list[str] = ["-o", str(out_dir)] if expect_artifact else []
+    if pass_output_dir is None:
+        pass_output_dir = expect_artifact
+    output_args: list[str] = ["-o", str(out_dir)] if pass_output_dir else []
     argv = [
         "npx",
         "notebooklm",
@@ -149,7 +197,25 @@ def run(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
+        _write_debug_log(
+            cmd,
+            argv,
+            returncode=None,
+            stdout=(exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")),
+            stderr=(exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")),
+            duration=time.time() - start,
+            timed_out=True,
+        )
         raise NotecraftError(f"notecraft {cmd} timed out after {timeout}s") from exc
+
+    _write_debug_log(
+        cmd,
+        argv,
+        returncode=result.returncode,
+        stdout=result.stdout or "",
+        stderr=result.stderr or "",
+        duration=time.time() - start,
+    )
 
     if result.returncode != 0:
         err = (result.stderr or "").strip()
@@ -157,6 +223,12 @@ def run(
         tail = err[-2000:] if err else f"exit code {result.returncode}"
         raise cls(tail)
 
-    if not expect_artifact:
-        return out_dir
-    return _newest_artifact(out_dir, cmd, since=start)
+    artifact = _newest_artifact(out_dir, cmd, since=start) if expect_artifact else None
+    if return_full:
+        return RunResult(
+            artifact=artifact,
+            out_dir=out_dir,
+            stdout=result.stdout or "",
+            stderr=result.stderr or "",
+        )
+    return artifact if artifact is not None else out_dir

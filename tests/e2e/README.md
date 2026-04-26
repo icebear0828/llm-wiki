@@ -1,6 +1,6 @@
 # Real E2E playbook for the 9 notecraft tasks
 
-This is the manual reproducibility doc for issue #38.
+This is the manual reproducibility doc for issues #38 and #46.
 
 `tests/e2e/test_notecraft_e2e.py` covers `npx notebooklm list` x3 (the
 CLAUDE.md "≥3 successful real calls" minimum). The 9 generation tasks
@@ -34,15 +34,15 @@ content.
 
 ## Expected results
 
-- audio: `assets/audio/<stem>.mp3`
+- audio: `assets/audio/audio_*.mp4` (vendor saves mp4 container, not mp3)
 - flashcards: `assets/quiz/flashcards_*.html`
 - slides: `assets/slides/slides_*.pdf`
 - quiz: `assets/quiz/quiz_*.html`
-- infographic: `assets/infographic/<stem>.{png,html,...}`
+- infographic: `assets/infographic/infographic_*.png` (vendor poll ≤300s + CDN retry ≤550s, task timeout 900s)
 - data-table: `assets/data-table/data_table_*.json`
-- source-add: notebook gains a new source; note gets `notecraft_source_added_to` and `source_added_at` in frontmatter
+- source-add: notebook gains a new source row (no upstream dedupe — same URL added twice creates two rows); note gets `notecraft_source_added_to` and `source_added_at` in frontmatter
 - chat: answer appended to note body under `## Chat: <question>`
-- video: `assets/video/<stem>.mp4`
+- video: **no local file** — frontmatter gains `video_url` (stream/hls/download URL from NotebookLM); body prepended with `[Video overview](<url>)` link
 
 ## Failure classification
 
@@ -54,3 +54,9 @@ content.
 ## Logs
 
 Append per-run logs to `/tmp/e2e-38-log.md` (gitignored).
+
+For boundary cases set `NOTECRAFT_DEBUG_LOG_DIR=/tmp/notecraft-debug` —
+each subprocess call writes a `<ts>-<cmd>.log` containing argv, stdout,
+stderr, returncode, and duration. This is what unblocked the #46
+investigation (vendor `video` exits 0 but only emits a URL; without
+stdout capture the failure looked like silent upstream loss).
