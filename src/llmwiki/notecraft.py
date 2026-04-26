@@ -122,6 +122,8 @@ def run(
     out_dir: Path,
     extra_args: list[str] | None = None,
     timeout: float = 600.0,
+    subcommand: str | None = None,
+    expect_artifact: bool = True,
 ) -> Path:
     _ensure_installed()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -129,6 +131,7 @@ def run(
         "npx",
         "notebooklm",
         cmd,
+        *([subcommand] if subcommand else []),
         "--transport",
         "auto",
         *source.as_args(),
@@ -154,4 +157,6 @@ def run(
         tail = err[-2000:] if err else f"exit code {result.returncode}"
         raise cls(tail)
 
+    if not expect_artifact:
+        return out_dir
     return _newest_artifact(out_dir, cmd, since=start)

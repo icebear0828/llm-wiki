@@ -60,8 +60,18 @@ class Note:
         return []
 
     @property
-    def task_tags(self) -> list[str]:
-        return [t.removeprefix("task/") for t in self.tags if t.startswith("task/")]
+    def task_tags(self) -> list[tuple[str, str | None]]:
+        result: list[tuple[str, str | None]] = []
+        for t in self.tags:
+            if not t.startswith("task/"):
+                continue
+            body = t.removeprefix("task/")
+            if ":" in body:
+                name, arg = body.split(":", 1)
+                result.append((name, arg))
+            else:
+                result.append((body, None))
+        return result
 
     @property
     def status(self) -> str:
@@ -99,7 +109,8 @@ class Note:
 
     def remove_task(self, name: str) -> None:
         target = f"task/{name}"
-        tags = [t for t in self.tags if t != target]
+        prefix = f"{target}:"
+        tags = [t for t in self.tags if t != target and not t.startswith(prefix)]
         self._post.metadata["tags"] = tags
 
     def set_status(self, status: str, *, error: str | None = None) -> None:

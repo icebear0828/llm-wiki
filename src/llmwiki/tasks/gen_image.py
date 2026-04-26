@@ -48,7 +48,7 @@ def _build_client(vault_root: Path) -> ImagenClient:
     return ImagenClient(cfg)
 
 
-def run(note: _NoteWithBody) -> dict[str, Path]:
+def run(note: _NoteWithBody, *, arg: str | None = None) -> dict[str, Path]:
     prompts = _read_prompts(note)
     vault_root = _vault_root_for(note.path)
     out_dir = vault_root / "assets" / "images"
