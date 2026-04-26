@@ -660,5 +660,55 @@ def stt_transcribe(
     console.print(transcript.text)
 
 
+imagen_app = typer.Typer(no_args_is_help=True, help="Reverse image generation")
+app.add_typer(imagen_app, name="imagen")
+
+
+@imagen_app.command("init")
+def imagen_init(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    from llmwiki.imagen.config import CONFIG_FILENAME as _IMAGEN_CFG, write_default_template as _imagen_write
+
+    root = _discover_vault_root(vault_path)
+    target, written = _imagen_write(root)
+    if written:
+        console.print(f"[green]wrote[/green] {target.relative_to(root)}")
+    else:
+        console.print(f"[dim]{_IMAGEN_CFG} already exists, leaving untouched[/dim]")
+
+
+@imagen_app.command("generate")
+def imagen_generate(
+    prompt: str = typer.Argument(..., help="Image prompt"),
+    n: int = typer.Option(1, "-n", "--n", help="Number of images"),
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    from llmwiki.imagen.client import ImagenClient, ImagenError
+    from llmwiki.imagen.config import ImagenConfig
+
+    root = _discover_vault_root(vault_path)
+    cfg = ImagenConfig.load(root)
+    try:
+        client = ImagenClient(cfg)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1) from e
+
+    out_dir = root / cfg.output_subdir
+    try:
+        paths = client.generate(prompt, n=n, out_dir=out_dir)
+    except ImagenError as e:
+        console.print(f"[red]imagen error:[/red] {e}")
+        raise typer.Exit(code=1) from e
+
+    for p in paths:
+        try:
+            rel = p.resolve().relative_to(root.resolve())
+            console.print(f"[green]saved[/green] {rel}")
+        except ValueError:
+            console.print(f"[green]saved[/green] {p}")
+
+
 if __name__ == "__main__":
     app()

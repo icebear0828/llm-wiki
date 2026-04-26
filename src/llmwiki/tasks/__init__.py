@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from llmwiki.tasks import audio, flashcards, report, slides, transcribe, video
+from llmwiki.tasks import audio, flashcards, gen_image, report, slides, transcribe, video
 from llmwiki.tasks._types import NoteLike
 
 TaskFn = Callable[[NoteLike], dict[str, Path]]
@@ -15,6 +15,7 @@ TASK_REGISTRY: dict[str, TaskFn] = {
     "video": video.run,
     "flashcards": flashcards.run,
     "transcribe": transcribe.run,
+    "gen-image": gen_image.run,
 }
 
 __all__ = ["TASK_REGISTRY", "TaskFn", "NoteLike"]
