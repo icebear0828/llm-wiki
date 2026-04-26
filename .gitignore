@@ -29,6 +29,8 @@ Thumbs.db
 raw/.cache/
 *.tmp
 *.swp
+.cookiejar_*
+assets/**/.cookiejar_*
 
 # Local secrets / config overrides
 .env
