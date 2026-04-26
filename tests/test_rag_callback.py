@@ -292,6 +292,24 @@ async def test_non_completion_call_type_passthrough(tmp_path: Path) -> None:
     assert not idx.calls
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "call_type",
+    ["acompletion", "anthropic_messages", "agenerate_content", "atext_completion"],
+)
+async def test_router_call_types_trigger_rag(tmp_path: Path, call_type: str) -> None:
+    # Regression: LiteLLM passes call_type="acompletion" / "anthropic_messages" /
+    # "agenerate_content" depending on the incoming route. Earlier we only matched
+    # "completion" and silently skipped injection for /v1/chat/completions and
+    # /v1/messages.
+    cb, idx = _make(tmp_path)
+    data: dict[str, object] = {
+        "messages": [{"role": "user", "content": "discuss the long topic now"}],
+    }
+    await cb.async_pre_call_hook({}, None, data, call_type)
+    assert idx.calls, f"RAG should fire for call_type={call_type}"
+
+
 def test_build_context_template_format() -> None:
     ctx = _build_context(_hits())
     assert ctx.startswith("Relevant context from your private knowledge base (wiki):")

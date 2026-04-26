@@ -9,7 +9,9 @@ from llmwiki.vault import Vault
 
 CallType = Literal[
     "completion",
+    "acompletion",
     "text_completion",
+    "atext_completion",
     "embeddings",
     "image_generation",
     "moderation",
@@ -17,6 +19,18 @@ CallType = Literal[
     "pass_through_endpoint",
     "rerank",
 ]
+
+_COMPLETION_CALL_TYPES = frozenset((
+    "completion",
+    "acompletion",
+    "text_completion",
+    "atext_completion",
+    "anthropic_messages",       # /v1/messages route
+    "agenerate_content",        # /v1beta/.../generateContent route
+    "generate_content",
+    "astream_generate_content",
+    "stream_generate_content",
+))
 
 SKIP_HEADER = "x-llmwiki-skip-rag"
 
@@ -224,7 +238,7 @@ class RAGCallback(CustomLogger):
         data: dict[str, object],
         call_type: CallType,
     ) -> dict[str, object] | None:
-        if call_type not in ("completion", "text_completion"):
+        if call_type not in _COMPLETION_CALL_TYPES:
             return data
         if _should_skip_via_metadata(user_api_key_dict, data):
             return data
