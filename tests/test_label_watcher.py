@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+from llmwiki.label_watcher import LabelWatcher
+from llmwiki.vault import Note, Vault
+
+
+@pytest.fixture
+def vault(tmp_path: Path) -> Vault:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "wiki").mkdir()
+    (tmp_path / "assets").mkdir()
+    return Vault(root=tmp_path)
+
+
+def _make_note(vault: Vault, tag: str = "fake", name: str = "foo.md") -> Path:
+    p = vault.raw / name
+    p.write_text(
+        f"---\ntitle: Foo\ntags:\n  - task/{tag}\nstatus: pending\n---\nhello\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_scan_once_happy(vault: Vault) -> None:
+    art = vault.assets / "fake.bin"
+    art.write_bytes(b"x")
+
+    def fake_task(note: Note) -> dict[str, Path]:
+        return {"fake": art}
+
+    registry: dict[str, Callable[[Note], dict[str, Path]]] = {"fake": fake_task}
+    watcher = LabelWatcher(vault, task_registry=registry)
+    _make_note(vault, tag="fake")
+    watcher.scan_once()
+
+    moved = vault.wiki / "foo.md"
+    assert moved.exists()
+    assert not (vault.raw / "foo.md").exists()
+    n = Note(moved)
+    assert n.status == "done"
+    assert n.task_tags == []
+    assert "![[assets/fake.bin]]" in n.body
+
+
+def test_scan_once_session_expired_keeps_tags(vault: Vault) -> None:
+    class SessionExpired(Exception):
+        pass
+
+    def bad_task(note: Note) -> dict[str, Path]:
+        raise SessionExpired("no session")
+
+    watcher = LabelWatcher(vault, task_registry={"fake": bad_task})
+    raw_path = _make_note(vault, tag="fake")
+    watcher.scan_once()
+
+    assert raw_path.exists()
+    n = Note(raw_path)
+    assert "task/fake" in n.tags
+    assert n.status == "error"
+    assert (vault.assets / "ALERT-session-expired.md").exists()
+
+
+def test_scan_once_generic_error_keeps_tags(vault: Vault) -> None:
+    def bad_task(note: Note) -> dict[str, Path]:
+        raise RuntimeError("boom")
+
+    watcher = LabelWatcher(vault, task_registry={"fake": bad_task})
+    raw_path = _make_note(vault, tag="fake")
+    watcher.scan_once()
+
+    assert raw_path.exists()
+    n = Note(raw_path)
+    assert "task/fake" in n.tags
+    assert n.status == "error"
+
+
+def test_scan_once_no_task_tags_skipped(vault: Vault) -> None:
+    p = vault.raw / "x.md"
+    p.write_text("---\ntags:\n  - foo\nstatus: pending\n---\nbody\n", encoding="utf-8")
+    watcher = LabelWatcher(vault, task_registry={})
+    watcher.scan_once()
+    assert p.exists()
+    assert not (vault.wiki / "x.md").exists()
