@@ -13,6 +13,8 @@ dependencies = [
     "httpx[socks]>=0.28.1",
     "fastembed>=0.4",
     "chromadb>=0.5",
+    "fastapi>=0.115",
+    "trafilatura>=1.12",
 ]
 
 [project.scripts]

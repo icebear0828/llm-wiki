@@ -463,5 +463,50 @@ def rag_stats(
     console.print(table)
 
 
+im_app = typer.Typer(no_args_is_help=True, help="IM gateway (HTTP + Telegram)")
+app.add_typer(im_app, name="im")
+
+
+@im_app.command("init")
+def im_init(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    from llmwiki.im.config import CONFIG_FILENAME, write_default_template
+
+    root = _discover_vault_root(vault_path)
+    target, written = write_default_template(root)
+    if written:
+        console.print(f"[green]wrote[/green] {target.relative_to(root)}")
+    else:
+        console.print(f"[dim]{CONFIG_FILENAME} already exists, leaving untouched[/dim]")
+
+
+@im_app.command("http")
+def im_http(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+    port: int | None = typer.Option(None, "--port", help="Override im.toml http_port"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+) -> None:
+    import uvicorn
+
+    from llmwiki.im.config import ImConfig
+    from llmwiki.im.http_endpoint import create_app
+    from llmwiki.vault import Vault
+
+    root = _discover_vault_root(vault_path)
+    cfg = ImConfig.load(root)
+    if port is not None:
+        from dataclasses import replace
+
+        cfg = replace(cfg, http_port=port)
+    vault = Vault(root)
+    fastapi_app = create_app(vault, cfg)
+    console.print(f"[green]ready[/green] http://{host}:{cfg.http_port}")
+    server = uvicorn.Server(
+        uvicorn.Config(fastapi_app, host=host, port=cfg.http_port, log_level="info")
+    )
+    server.run()
+
+
 if __name__ == "__main__":
     app()
