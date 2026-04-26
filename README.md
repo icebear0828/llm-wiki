@@ -40,3 +40,44 @@ uv run wikictl gateway config     # 打印三家客户端环境变量
 ```
 
 完整子命令见 `uv run wikictl gateway --help`。
+
+## IM gateway
+
+外部消息（HTTP webhook、Telegram bot、未来的 Discord/飞书等）经一条共享 ingest 管道落到 `raw/`，被 `wikictl daemon` 接管并按 `task/*` 标签触发 Notecraft 生成。
+
+```bash
+uv run wikictl im init           # 写 <vault>/im.toml 模板
+uv run wikictl im http           # 只起 HTTP /ingest（端口 8081）
+uv run wikictl im telegram       # 只起 Telegram polling
+uv run wikictl im start          # 同进程并发起 HTTP + Telegram
+```
+
+### HTTP `/ingest`
+
+```bash
+# 文本
+curl -X POST http://localhost:8081/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"text","payload":"笔记内容","tags":["task/report"]}'
+
+# URL（trafilatura 自动抓正文转 markdown）
+curl -X POST http://localhost:8081/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"url","payload":"https://en.wikipedia.org/wiki/HTTPS"}'
+
+# 文件上传
+curl -X POST http://localhost:8081/ingest/file \
+  -F "file=@paper.pdf" -F "tags=task/report"
+```
+
+可选鉴权：在 `im.toml` 设 `http_token = "<秘密>"`，请求加 `X-Llmwiki-Token: <秘密>`。
+
+### Telegram bot
+
+1. BotFather 建 bot 拿 token
+2. `LLMWIKI_TG_TOKEN=<token> uv run wikictl im start`
+3. 给 bot 发：纯文本 / URL / 文档 / 图片 / 语音都会落到 `raw/`
+4. 斜杠命令注入 task 标签：`/audio <text>`、`/report <url>`、`/slides`、`/video`、`/flashcards`
+5. 默认全开（不限白名单）；要锁就在 `im.toml` 的 `[telegram] allowed_user_ids = [123456]` 填你的 chat id
+
+完整子命令见 `uv run wikictl im --help`。
