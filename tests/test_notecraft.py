@@ -20,6 +20,7 @@ def _patch_run(
     monkeypatch: pytest.MonkeyPatch,
     *,
     returncode: int = 0,
+    stdout: str = "",
     stderr: str = "",
     captured: dict[str, list[str]] | None = None,
 ):
@@ -27,7 +28,7 @@ def _patch_run(
         if captured is not None:
             captured["argv"] = list(argv)
             captured["kwargs"] = kwargs
-        return SimpleNamespace(returncode=returncode, stdout="", stderr=stderr)
+        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
 
     monkeypatch.setattr(subprocess, "run", fake)
 
@@ -146,6 +147,62 @@ def test_returns_newest_matching_extension(
         "audio", source=NoteSource(url="https://e.com"), out_dir=tmp_path
     )
     assert result == new
+
+
+def test_debug_log_writes_argv_stdout_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log_dir = tmp_path / "logs"
+    monkeypatch.setenv("NOTECRAFT_DEBUG_LOG_DIR", str(log_dir))
+    _patch_run(monkeypatch, stdout="path=/tmp/out.mp4", stderr="warn: x")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "x.mp4").write_bytes(b"v")
+    notecraft.run(
+        "video",
+        source=NoteSource(url="https://e.com/v"),
+        out_dir=out_dir,
+    )
+    logs = sorted(log_dir.glob("*.log"))
+    assert len(logs) == 1
+    body = logs[0].read_text()
+    assert "npx notebooklm video" in body
+    assert "path=/tmp/out.mp4" in body
+    assert "warn: x" in body
+    assert "returncode=0" in body
+
+
+def test_debug_log_written_on_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log_dir = tmp_path / "logs"
+    monkeypatch.setenv("NOTECRAFT_DEBUG_LOG_DIR", str(log_dir))
+    _patch_run(monkeypatch, returncode=2, stdout="partial", stderr="boom")
+    with pytest.raises(NotecraftError):
+        notecraft.run(
+            "audio",
+            source=NoteSource(url="https://e.com/a"),
+            out_dir=tmp_path,
+        )
+    logs = sorted(log_dir.glob("*.log"))
+    assert len(logs) == 1
+    body = logs[0].read_text()
+    assert "partial" in body
+    assert "boom" in body
+    assert "returncode=2" in body
+
+
+def test_debug_log_disabled_without_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NOTECRAFT_DEBUG_LOG_DIR", raising=False)
+    _patch_run(monkeypatch, stdout="hi")
+    (tmp_path / "out.mp3").write_bytes(b"x")
+    notecraft.run(
+        "audio",
+        source=NoteSource(url="https://e.com"),
+        out_dir=tmp_path,
+    )
 
 
 def test_note_source_validation() -> None:

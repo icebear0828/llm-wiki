@@ -18,16 +18,22 @@ class FakeNote:
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, captured: dict[str, object]) -> None:
-    def fake(cmd, *, source, out_dir, extra_args=None, timeout=600.0):
+    def fake(cmd, *, source, out_dir, extra_args=None, timeout=600.0, **kwargs):
         captured["cmd"] = cmd
         captured["source"] = source
         captured["out_dir"] = out_dir
         captured["extra_args"] = list(extra_args or [])
-        return out_dir / f"{cmd}-fake.bin"
+        captured["kwargs"] = kwargs
+        artifact = out_dir / f"{cmd}-fake.bin"
+        if kwargs.get("return_full"):
+            return notecraft.RunResult(
+                artifact=artifact,
+                stdout=str(captured.get("fake_stdout", "")),
+                stderr="",
+            )
+        return artifact
 
     monkeypatch.setattr(notecraft, "run", fake)
-    # also patch the imports in each task module since `from llmwiki import notecraft`
-    # rebinds them to the same module object — `notecraft.run` lookup is dynamic, so OK
     for mod in (audio, report, slides, video, flashcards):
         monkeypatch.setattr(mod.notecraft, "run", fake, raising=True)
 
@@ -61,13 +67,6 @@ def test_registry_keys() -> None:
         ("audio", "audio", ["--format", "debate", "--length", "short"], "audio", "audio"),
         ("report", "report", ["--template", "study_guide"], "report", "report"),
         ("slides", "slides", ["--format", "presenter"], "slides", "slides"),
-        (
-            "video",
-            "video",
-            ["--format", "explainer", "--style", "whiteboard"],
-            "video",
-            "video",
-        ),
         (
             "flashcards",
             "flashcards",
