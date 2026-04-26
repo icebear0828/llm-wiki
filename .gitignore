@@ -36,3 +36,6 @@ assets/**/.cookiejar_*
 .env
 .env.local
 config.local.toml
+
+# Local RAG index (user cache, never committed)
+.llmwiki/
