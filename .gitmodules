@@ -1,0 +1,3 @@
+[submodule "vendor/notebooklm"]
+	path = vendor/notebooklm
+	url = /Users/c/NotebookLM
