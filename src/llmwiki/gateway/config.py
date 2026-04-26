@@ -17,6 +17,11 @@ port = 8080
 master_key = "sk-llmwiki-local"
 request_timeout = 600
 
+# RAG injection (issue #14)
+# rag_enabled = true
+# rag_top_k = 5
+# rag_min_query_length = 10
+
 [backends.openai]
 api_base = ""
 api_key = "dummy"
@@ -48,6 +53,9 @@ class GatewayConfig:
     master_key: str = "sk-llmwiki-local"
     request_timeout: int = 600
     backends: dict[str, BackendConfig] = field(default_factory=dict)
+    rag_enabled: bool = True
+    rag_top_k: int = 5
+    rag_min_query_length: int = 10
 
     @classmethod
     def load(cls, vault_root: Path) -> "GatewayConfig":
@@ -61,6 +69,9 @@ class GatewayConfig:
         port = int(data.get("port", 8080))
         master_key = str(data.get("master_key", "sk-llmwiki-local"))
         request_timeout = int(data.get("request_timeout", 600))
+        rag_enabled = bool(data.get("rag_enabled", True))
+        rag_top_k = int(data.get("rag_top_k", 5))
+        rag_min_query_length = int(data.get("rag_min_query_length", 10))
 
         backends: dict[str, BackendConfig] = {}
         raw_backends = data.get("backends") or {}
@@ -84,6 +95,9 @@ class GatewayConfig:
             master_key=master_key,
             request_timeout=request_timeout,
             backends=backends,
+            rag_enabled=rag_enabled,
+            rag_top_k=rag_top_k,
+            rag_min_query_length=rag_min_query_length,
         )
 
     def configured_backends(self) -> dict[str, BackendConfig]:

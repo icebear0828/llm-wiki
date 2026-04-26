@@ -351,6 +351,11 @@ def gateway_start(
 
     proc = start(cfg, yaml_path)
     console.print(f"[green]litellm proxy spawned[/green] pid={proc.pid} port={cfg.port}")
+    rag_state = "enabled" if cfg.rag_enabled else "disabled"
+    console.print(
+        f"[cyan]RAG injection {rag_state}[/cyan] "
+        f"top_k={cfg.rag_top_k} min_query_length={cfg.rag_min_query_length}"
+    )
     ready = health_check(cfg.port, timeout=health_timeout)
     if not ready:
         console.print("[red]health check failed[/red] (see proxy logs)")
