@@ -66,6 +66,53 @@ def test_scan_once_session_expired_keeps_tags(vault: Vault) -> None:
     assert (vault.assets / "ALERT-session-expired.md").exists()
 
 
+def test_session_expired_pushes_telegram(vault: Vault, monkeypatch: pytest.MonkeyPatch) -> None:
+    from llmwiki import label_watcher as lw_mod
+    from llmwiki.im.config import ImConfig, TelegramConfig
+
+    class SessionExpired(Exception):
+        pass
+
+    def bad_task(note: Note) -> dict[str, Path]:
+        raise SessionExpired("no session")
+
+    calls: list[dict[str, object]] = []
+
+    def fake_push(text: str, *, cfg: TelegramConfig, vault_root: Path, throttle_key: str = "default", window_seconds: int = 3600) -> None:
+        calls.append({"text": text, "cfg": cfg, "vault_root": vault_root, "throttle_key": throttle_key})
+
+    monkeypatch.setattr(lw_mod, "push_telegram", fake_push)
+
+    im_cfg = ImConfig(telegram=TelegramConfig(bot_token="t", notify_chat_id=99))
+    watcher = LabelWatcher(vault, task_registry={"fake": bad_task}, im_config=im_cfg)
+    _make_note(vault, tag="fake")
+    watcher.scan_once()
+
+    assert len(calls) == 1
+    assert calls[0]["throttle_key"] == "session_expired"
+    assert calls[0]["vault_root"] == vault.root
+    assert calls[0]["cfg"] is im_cfg.telegram
+
+
+def test_session_expired_no_push_without_im_config(vault: Vault, monkeypatch: pytest.MonkeyPatch) -> None:
+    from llmwiki import label_watcher as lw_mod
+
+    class SessionExpired(Exception):
+        pass
+
+    def bad_task(note: Note) -> dict[str, Path]:
+        raise SessionExpired("no session")
+
+    calls: list[object] = []
+    monkeypatch.setattr(lw_mod, "push_telegram", lambda *a, **kw: calls.append(1))
+
+    watcher = LabelWatcher(vault, task_registry={"fake": bad_task})
+    _make_note(vault, tag="fake")
+    watcher.scan_once()
+
+    assert calls == []
+
+
 def test_scan_once_generic_error_keeps_tags(vault: Vault) -> None:
     def bad_task(note: Note) -> dict[str, Path]:
         raise RuntimeError("boom")
