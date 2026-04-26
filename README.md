@@ -81,3 +81,31 @@ curl -X POST http://localhost:8081/ingest/file \
 5. 默认全开（不限白名单）；要锁就在 `im.toml` 的 `[telegram] allowed_user_ids = [123456]` 填你的 chat id
 
 完整子命令见 `uv run wikictl im --help`。
+
+## STT (Whisper)
+
+设备 A (192.168.10.2:8000) 跑 `mlx-whisper-large-v3` (FastAPI + MLX)，launchd 自启。Telegram 语音消息默认带 `task/transcribe` 标签 → daemon 检测 → 调 A 转录 → 笔记落 `wiki/`，body 顶部嵌入转录正文，segments JSON 存 `assets/transcripts/`。
+
+```bash
+uv run wikictl stt init                  # 写 <vault>/stt.toml 模板
+uv run wikictl stt transcribe foo.mp3    # 一次性转录单文件
+```
+
+支持中/英/日/韩等多语言 auto-detect；frontmatter 自动写入 `language` + `duration_seconds`。
+
+完整子命令见 `uv run wikictl stt --help`。
+
+## Reverse generation (`#task/gen-image`)
+
+笔记 frontmatter 加 `image_prompt: "..."` + tag `task/gen-image` → daemon 调上游图像模型 → 落到 `assets/images/<UTC-ts>-<n>.{png|jpg}` → 笔记顶部插入 `![[...]]`。
+
+支持 OpenAI 风格 (`/v1/images/generations`) 和 Gemini 原生 (`/v1beta/.../generateContent`) 两种 backend，由 `imagen.toml` 的 `backend = "gemini" | "openai"` 切换。
+
+```bash
+uv run wikictl imagen init              # 写 <vault>/imagen.toml 模板
+uv run wikictl imagen generate "a cat"  # 一次性生图（不入 vault）
+```
+
+`image_prompt` 可以是单字符串或字符串数组（一篇笔记多张图）。
+
+完整子命令见 `uv run wikictl imagen --help`。

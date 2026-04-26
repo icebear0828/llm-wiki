@@ -1,0 +1,6 @@
+base_url = "https://your-gateway.example.com/v1/v1"
+api_key = "<REDACTED-GATEWAY-KEY>"   # or set env LLMWIKI_IMAGEN_KEY
+model = "opal/bananapro"
+output_subdir = "assets/images"
+size = "1024x1024"
+timeout = 300.0
