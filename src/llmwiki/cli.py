@@ -622,5 +622,43 @@ def im_start(
         console.print("[yellow]stopped[/yellow]")
 
 
+stt_app = typer.Typer(no_args_is_help=True, help="Speech-to-text (Whisper)")
+app.add_typer(stt_app, name="stt")
+
+
+@stt_app.command("init")
+def stt_init(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    from llmwiki.stt.config import CONFIG_FILENAME, write_default_template
+
+    root = _discover_vault_root(vault_path)
+    target, written = write_default_template(root)
+    if written:
+        console.print(f"[green]wrote[/green] {target.relative_to(root)}")
+    else:
+        console.print(f"[dim]{CONFIG_FILENAME} already exists, leaving untouched[/dim]")
+
+
+@stt_app.command("transcribe")
+def stt_transcribe(
+    audio: Path = typer.Argument(..., exists=True, readable=True),
+    language: str | None = typer.Option(None, "--language", "-l"),
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    from llmwiki.stt.client import WhisperClient, WhisperError
+    from llmwiki.stt.config import SttConfig
+
+    root = _discover_vault_root(vault_path)
+    cfg = SttConfig.load(root)
+    client = WhisperClient(cfg)
+    try:
+        transcript = client.transcribe(audio, language=language)
+    except WhisperError as e:
+        console.print(f"[red]whisper error:[/red] {e}")
+        raise typer.Exit(code=1) from e
+    console.print(transcript.text)
+
+
 if __name__ == "__main__":
     app()
