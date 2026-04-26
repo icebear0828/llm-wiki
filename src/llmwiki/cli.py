@@ -1,16 +1,278 @@
+from __future__ import annotations
+
+import shutil
+import signal
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
 import typer
+from rich.console import Console
+from rich.table import Table
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer(no_args_is_help=True, add_completion=False)
+context_app = typer.Typer(no_args_is_help=True, help="CLI context file management")
+app.add_typer(context_app, name="context")
+
+console = Console()
+
+_DEFAULT_OBSIDIAN_APP_JSON = """{
+  "attachmentFolderPath": "assets",
+  "alwaysUpdateLinks": true,
+  "useMarkdownLinks": false,
+  "newLinkFormat": "shortest",
+  "showUnsupportedFiles": false,
+  "promptDelete": true,
+  "showLineNumber": true,
+  "readableLineLength": true,
+  "strictLineBreaks": false,
+  "foldHeading": true,
+  "foldIndent": true
+}
+"""
+
+_ASSET_DIRS = ("audio", "video", "slides", "report", "quiz")
 
 
-@app.callback()
-def _main() -> None:
-    pass
+def _discover_vault_root(explicit: Path | None = None) -> Path:
+    if explicit is not None:
+        return Path(explicit).resolve()
+    try:
+        from llmwiki.vault import Vault  # type: ignore[import-not-found]
+
+        return Path(Vault.discover().root).resolve()  # type: ignore[attr-defined]
+    except Exception:
+        return Path.cwd().resolve()
+
+
+def _ensure_dir(path: Path) -> bool:
+    existed = path.exists()
+    path.mkdir(parents=True, exist_ok=True)
+    gitkeep = path / ".gitkeep"
+    if not gitkeep.exists():
+        gitkeep.touch()
+    return not existed
 
 
 @app.command()
-def hello() -> None:
-    typer.echo("wiki ready")
+def init(
+    path: Path = typer.Option(Path("."), "--path", "-p", help="Vault root to initialize"),
+) -> None:
+    root = path.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+
+    created: list[str] = []
+    for sub in ("raw", "wiki"):
+        if _ensure_dir(root / sub):
+            created.append(sub + "/")
+    assets_root = root / "assets"
+    assets_root.mkdir(parents=True, exist_ok=True)
+    for asset in _ASSET_DIRS:
+        if _ensure_dir(assets_root / asset):
+            created.append(f"assets/{asset}/")
+
+    obsidian_dir = root / ".obsidian"
+    obsidian_dir.mkdir(parents=True, exist_ok=True)
+    app_json = obsidian_dir / "app.json"
+    if not app_json.exists():
+        app_json.write_text(_DEFAULT_OBSIDIAN_APP_JSON, encoding="utf-8")
+        created.append(".obsidian/app.json")
+
+    console.print(f"[green]vault initialized at[/green] {root}")
+    if created:
+        console.print("[cyan]created:[/cyan] " + ", ".join(created))
+    else:
+        console.print("[dim]already up to date (idempotent)[/dim]")
+
+    vendor = root / "vendor" / "notebooklm"
+    if not vendor.exists() or not any(vendor.iterdir()):
+        console.print(
+            "[yellow]reminder:[/yellow] vendor/notebooklm is empty -- run "
+            "`git -c protocol.file.allow=always submodule update --init`"
+        )
+
+
+@app.command()
+def daemon(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    try:
+        from llmwiki.config import Config
+        from llmwiki.git_autopilot import GitAutopilot  # type: ignore[import-not-found]
+        from llmwiki.label_watcher import LabelWatcher  # type: ignore[import-not-found]
+        from llmwiki.vault import Vault  # type: ignore[import-not-found]
+    except ImportError as e:
+        console.print(f"[red]missing module:[/red] {e}")
+        console.print("[yellow]Run after #2/#3 merged.[/yellow]")
+        raise typer.Exit(code=1) from e
+
+    cfg = Config.load(vault_path)
+    vault = Vault(cfg.vault_root)  # type: ignore[call-arg]
+    watcher = LabelWatcher(vault)  # type: ignore[call-arg]
+    autopilot = GitAutopilot(vault, debounce_seconds=cfg.debounce_seconds)  # type: ignore[call-arg]
+
+    def _stop(*_: object) -> None:
+        console.print("[yellow]stopping...[/yellow]")
+        try:
+            watcher.stop()
+        except Exception:
+            pass
+        try:
+            autopilot.stop()
+        except Exception:
+            pass
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _stop)
+    signal.signal(signal.SIGTERM, _stop)
+
+    watcher.start()
+    autopilot.start()
+    console.print(f"[green]daemon running[/green] vault={cfg.vault_root}")
+    signal.pause()
+
+
+@app.command()
+def ingest(
+    file: Path = typer.Argument(..., exists=True, readable=True),
+    tag: list[str] = typer.Option([], "--tag", "-t", help="Add task tag, e.g. task/audio"),
+    source_url: str | None = typer.Option(None, "--source-url"),
+    title: str | None = typer.Option(None, "--title"),
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    import frontmatter
+
+    root = _discover_vault_root(vault_path)
+    raw_dir = root / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    src = file.resolve()
+    now = datetime.now(timezone.utc).isoformat()
+
+    if src.suffix.lower() == ".md":
+        target = raw_dir / src.name
+        post = frontmatter.load(str(src))
+        if title:
+            post["title"] = title
+        elif "title" not in post.metadata:
+            post["title"] = src.stem
+        if source_url:
+            post["source"] = source_url
+        if "created" not in post.metadata:
+            post["created"] = now
+        if "status" not in post.metadata:
+            post["status"] = "pending"
+        existing_tags = list(post.metadata.get("tags") or [])
+        for t in tag:
+            if t not in existing_tags:
+                existing_tags.append(t)
+        if existing_tags:
+            post["tags"] = existing_tags
+        target.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
+        console.print(f"[green]ingested[/green] {target.relative_to(root)}")
+    else:
+        copied = raw_dir / src.name
+        if src != copied:
+            shutil.copy2(src, copied)
+        wrapper_meta: dict[str, object] = {
+            "title": title or src.stem,
+            "source_file": f"raw/{src.name}",
+            "created": now,
+            "status": "pending",
+        }
+        if source_url:
+            wrapper_meta["source"] = source_url
+        if tag:
+            wrapper_meta["tags"] = list(tag)
+        post = frontmatter.Post(content=f"![[raw/{src.name}]]\n", **wrapper_meta)
+        wrapper = raw_dir / f"{src.stem}.md"
+        wrapper.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
+        console.print(f"[green]wrapped[/green] {wrapper.relative_to(root)} -> {src.name}")
+
+
+@app.command("run-task")
+def run_task(
+    note: Path = typer.Argument(..., exists=True, readable=True),
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    try:
+        from llmwiki.label_watcher import LabelWatcher  # type: ignore[import-not-found]
+        from llmwiki.vault import Vault  # type: ignore[import-not-found]
+    except ImportError as e:
+        console.print(f"[red]missing module:[/red] {e}")
+        console.print("[yellow]Run after #2/#3 merged.[/yellow]")
+        raise typer.Exit(code=1) from e
+
+    root = _discover_vault_root(vault_path)
+    vault = Vault(root)  # type: ignore[call-arg]
+    watcher = LabelWatcher(vault)  # type: ignore[call-arg]
+    watcher._process_note(note.resolve())  # type: ignore[attr-defined]
+    console.print(f"[green]processed[/green] {note}")
+
+
+@context_app.command("regen")
+def context_regen(
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    from llmwiki import cli_context
+
+    root = _discover_vault_root(vault_path)
+    try:
+        written = cli_context.regenerate(vault_root=root)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1) from e
+    for name, path in written.items():
+        console.print(f"[green]wrote[/green] {path}")
+    console.print(f"[cyan]{len(written)} files[/cyan]")
+
+
+@app.command()
+def status(
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    import frontmatter
+
+    root = _discover_vault_root(vault_path)
+    table = Table(title=f"vault status: {root}")
+    table.add_column("path", style="white")
+    table.add_column("status")
+    table.add_column("task_tags", style="magenta")
+    table.add_column("last_modified", style="dim")
+
+    color = {
+        "pending": "yellow",
+        "processing": "cyan",
+        "done": "green",
+        "error": "red",
+    }
+
+    rows = 0
+    for sub in ("raw", "wiki"):
+        d = root / sub
+        if not d.is_dir():
+            continue
+        for md in sorted(d.rglob("*.md")):
+            try:
+                post = frontmatter.load(str(md))
+            except Exception:
+                continue
+            st = str(post.metadata.get("status", "-"))
+            tags = post.metadata.get("tags") or []
+            task_tags = [t for t in tags if isinstance(t, str) and t.startswith("task/")]
+            mtime = datetime.fromtimestamp(md.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+            c = color.get(st, "white")
+            table.add_row(
+                str(md.relative_to(root)),
+                f"[{c}]{st}[/{c}]",
+                ", ".join(task_tags) or "-",
+                mtime,
+            )
+            rows += 1
+
+    if rows == 0:
+        console.print(f"[dim]no notes found under {root}/raw or {root}/wiki[/dim]")
+    else:
+        console.print(table)
 
 
 if __name__ == "__main__":
