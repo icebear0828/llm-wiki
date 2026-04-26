@@ -1,0 +1,36 @@
+# Python / uv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+
+# Node (vendor/notebooklm has its own)
+node_modules/
+
+# Obsidian transient state (keep config + plugins)
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vault transient
+raw/.cache/
+*.tmp
+*.swp
+
+# Local secrets / config overrides
+.env
+.env.local
+config.local.toml
