@@ -1,0 +1,13 @@
+{
+  "attachmentFolderPath": "assets",
+  "alwaysUpdateLinks": true,
+  "useMarkdownLinks": false,
+  "newLinkFormat": "shortest",
+  "showUnsupportedFiles": false,
+  "promptDelete": true,
+  "showLineNumber": true,
+  "readableLineLength": true,
+  "strictLineBreaks": false,
+  "foldHeading": true,
+  "foldIndent": true
+}
