@@ -215,8 +215,11 @@ class LabelWatcher:
             return
 
         if succeeded:
-            # source-add is a one-way feed; don't ingest into wiki/
-            if all(name == "source-add" for name in succeeded):
+            # source-add is a one-way feed (push to NotebookLM); chat writes
+            # its answer into the note body in-place. Both stay in raw/ and
+            # don't get moved to wiki/ via ingest.
+            stay_in_raw_tasks = {"source-add", "chat"}
+            if all(name in stay_in_raw_tasks for name in succeeded):
                 for name in succeeded:
                     note.remove_task(name)
                 note.set_status("done")

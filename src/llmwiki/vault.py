@@ -139,6 +139,9 @@ class Note:
     def prepend_body(self, text: str) -> None:
         self._post.content = text + self._post.content
 
+    def append_body(self, text: str) -> None:
+        self._post.content = self._post.content + text
+
     def save(self) -> None:
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         data = frontmatter.dumps(self._post)
