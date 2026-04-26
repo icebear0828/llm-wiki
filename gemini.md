@@ -1,13 +1,9 @@
 <!-- llmwiki:cli-context -->
-# CLAUDE.md — LLM-Wiki Vault
+# GEMINI.md — LLM-Wiki Vault
 
-> 自动生成，编辑请改 `src/llmwiki/cli_context.py`。运行 `wikictl context regen` 刷新。
+> 自动生成。运行 `wikictl context regen` 刷新。
 
-## 项目意图
-
-个人多模态智能知识库：Obsidian Vault + Git autopilot + Notecraft 自动产物生成。
-
-## Vault 布局
+## 布局
 
 - `raw/` — 收件箱（原始 PDF、剪藏、录音、外部导入的笔记）
 - `wiki/` — 结构知识区（最终落盘 Markdown，双向链接网络）
@@ -15,9 +11,7 @@
 - `vendor/notebooklm/` — git submodule，所有生成命令通过 `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python 包（`wikictl` CLI、watcher、ingest、tasks）
 
-## Frontmatter 契约
-
-`raw/*.md` 与 `wiki/*.md` 同构：
+## Frontmatter
 
 ```yaml
 ---
@@ -32,16 +26,7 @@ artifacts:                         # watcher 写回
 ---
 ```
 
-完成后 watcher 移除对应 `task/*`、置 `status: done`、在正文顶部插入 `![[assets/...]]` 嵌入。
-
-## Obsidian 语法约定
-
-- 双向链接：`[[wiki/topic]]` 或 `[[topic]]`（启用 shortest 链接格式）
-- 附件嵌入：`![[assets/audio/x.mp3]]`、`![[assets/slides/x.pdf]]`
-- 标签触发：在 frontmatter `tags` 数组里写 `task/audio` 等会被 watcher 拾取
-- 链接更新：`alwaysUpdateLinks: true`，重命名/移动文件时链接自动跟随
-
-## 任务词表（`#task/*`）
+## 任务词表
 
 - `#task/audio` — 触发 `tasks.audio.run(note)`
 - `#task/report` — 触发 `tasks.report.run(note)`
@@ -49,7 +34,7 @@ artifacts:                         # watcher 写回
 - `#task/video` — 触发 `tasks.video.run(note)`
 - `#task/flashcards` — 触发 `tasks.flashcards.run(note)`
 
-## 当前目录（live）
+## 当前目录
 
 ```
 wiki-cli/
@@ -72,12 +57,3 @@ wiki-cli/
 ├── pyproject.toml
 └── uv.lock
 ```
-
-## 硬性规则
-
-- TDD：先写 pytest，绿了才算完成
-- Python 用 `uv run`，禁止裸 `python`/`pip`
-- TypeScript 禁止 `any`
-- E2E：涉及 notecraft / NotebookLM 的改动必须真调 ≥3 次连续成功
-- No push：`git_autopilot` 只 commit 不 push
-- Commit 格式：`<type>: <description>`；自动产物用 `[Auto] ...`

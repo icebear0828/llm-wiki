@@ -1,5 +1,5 @@
 <!-- llmwiki:cli-context -->
-# CLAUDE.md — LLM-Wiki Vault
+# AGENT.md — LLM-Wiki Vault
 
 > 自动生成，编辑请改 `src/llmwiki/cli_context.py`。运行 `wikictl context regen` 刷新。
 
@@ -15,9 +15,34 @@
 - `vendor/notebooklm/` — git submodule，所有生成命令通过 `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python 包（`wikictl` CLI、watcher、ingest、tasks）
 
-## Frontmatter 契约
+## 架构数据流
 
-`raw/*.md` 与 `wiki/*.md` 同构：
+```
+   user write
+       │
+       ▼
+  raw/foo.md  ──┐  frontmatter: tags=[task/audio]
+                │
+                ▼
+          ┌──────────────┐
+          │ LabelWatcher │  watchdog → debounce → parse frontmatter
+          └──────┬───────┘
+                 │ tasks.audio.run(note)
+                 ▼
+          ┌──────────────┐         npx notebooklm audio
+          │  Notecraft   │ ──────────────────────────► assets/audio/foo.mp3
+          └──────┬───────┘
+                 │ ingest.move_to_wiki(note, artifacts={...})
+                 ▼
+          wiki/foo.md  +  ![[assets/audio/foo.mp3]]
+                 │
+                 ▼
+          ┌──────────────┐
+          │ GitAutopilot │  5s debounce → [Auto] commit (no push)
+          └──────────────┘
+```
+
+## Frontmatter 契约
 
 ```yaml
 ---
@@ -31,15 +56,6 @@ artifacts:                         # watcher 写回
   slides: assets/slides/x.pdf
 ---
 ```
-
-完成后 watcher 移除对应 `task/*`、置 `status: done`、在正文顶部插入 `![[assets/...]]` 嵌入。
-
-## Obsidian 语法约定
-
-- 双向链接：`[[wiki/topic]]` 或 `[[topic]]`（启用 shortest 链接格式）
-- 附件嵌入：`![[assets/audio/x.mp3]]`、`![[assets/slides/x.pdf]]`
-- 标签触发：在 frontmatter `tags` 数组里写 `task/audio` 等会被 watcher 拾取
-- 链接更新：`alwaysUpdateLinks: true`，重命名/移动文件时链接自动跟随
 
 ## 任务词表（`#task/*`）
 
@@ -73,11 +89,11 @@ wiki-cli/
 └── uv.lock
 ```
 
-## 硬性规则
+## Do-not-break 防破坏准则
 
-- TDD：先写 pytest，绿了才算完成
-- Python 用 `uv run`，禁止裸 `python`/`pip`
-- TypeScript 禁止 `any`
-- E2E：涉及 notecraft / NotebookLM 的改动必须真调 ≥3 次连续成功
-- No push：`git_autopilot` 只 commit 不 push
-- Commit 格式：`<type>: <description>`；自动产物用 `[Auto] ...`
+- 不要 `git push`：autopilot 只本地 commit；推送由用户显式触发
+- 不要删除 `.obsidian/`：内含 vault 配置（attachmentFolderPath、链接格式等）
+- 不要绕过 watcher 直接写 `wiki/`：会破坏 ingest pipeline 与 frontmatter 状态机
+- 不要在 frontmatter 之外手动管理 `artifacts:` 字段：watcher 拥有写权
+- 修改 `src/llmwiki/{notecraft,vault,label_watcher,ingest,git_autopilot}.py` 前先看 owner agent
+- E2E：涉及 notecraft 的改动必须真调 ≥3 次（mock 不算）
