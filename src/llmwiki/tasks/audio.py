@@ -15,5 +15,6 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
         source=source_from(note),
         out_dir=out,
         extra_args=["--format", "debate", "--length", "short"],
+        timeout=1200.0,
     )
     return {"audio": artifact}
