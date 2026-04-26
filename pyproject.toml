@@ -11,6 +11,8 @@ dependencies = [
     "rich>=13",
     "litellm[proxy]>=1.55",
     "httpx[socks]>=0.28.1",
+    "fastembed>=0.4",
+    "chromadb>=0.5",
 ]
 
 [project.scripts]
@@ -36,4 +38,5 @@ line-length = 100
 [tool.pytest.ini_options]
 markers = [
     "e2e: end-to-end tests requiring real external services",
+    "slow: slow tests (model downloads, heavy embeddings)",
 ]

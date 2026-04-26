@@ -395,5 +395,68 @@ def gateway_config(
     console.print(_GATEWAY_CONFIG_SECTIONS.format(port=cfg.port, key=cfg.master_key))
 
 
+rag_app = typer.Typer(no_args_is_help=True, help="Local RAG index over wiki/")
+app.add_typer(rag_app, name="rag")
+
+
+@rag_app.command("reindex")
+def rag_reindex(
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    from llmwiki.rag.index import WikiIndex
+    from llmwiki.vault import Vault
+
+    root = _discover_vault_root(vault_path)
+    vault = Vault(root)
+    index = WikiIndex(vault)
+    n = index.reindex_all()
+    console.print(f"[green]reindexed[/green] {n} notes -> {index.persist_path}")
+
+
+@rag_app.command("query")
+def rag_query(
+    text: str = typer.Argument(..., help="Query text"),
+    k: int = typer.Option(5, "-k", "--k", help="Top-k results"),
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    from llmwiki.rag.index import WikiIndex
+    from llmwiki.vault import Vault
+
+    root = _discover_vault_root(vault_path)
+    vault = Vault(root)
+    index = WikiIndex(vault)
+    hits = index.query(text, k=k)
+    if not hits:
+        console.print("[dim]no hits[/dim]")
+        return
+    table = Table(title=f"rag query: {text!r}")
+    table.add_column("score", style="cyan", justify="right")
+    table.add_column("rel_path", style="white")
+    table.add_column("title", style="magenta")
+    table.add_column("snippet", style="dim")
+    for h in hits:
+        table.add_row(f"{h.score:.3f}", h.rel_path, h.title, h.snippet[:120])
+    console.print(table)
+
+
+@rag_app.command("stats")
+def rag_stats(
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    from llmwiki.rag.index import WikiIndex
+    from llmwiki.vault import Vault
+
+    root = _discover_vault_root(vault_path)
+    vault = Vault(root)
+    index = WikiIndex(vault)
+    info = index.stats()
+    table = Table(title="rag stats")
+    table.add_column("key", style="cyan")
+    table.add_column("value", style="white")
+    for key, value in info.items():
+        table.add_row(key, str(value))
+    console.print(table)
+
+
 if __name__ == "__main__":
     app()
