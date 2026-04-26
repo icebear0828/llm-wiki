@@ -5,8 +5,12 @@ from typing import Callable
 
 from llmwiki.tasks import (
     audio,
+    chat,
+    data_table,
     flashcards,
     gen_image,
+    infographic,
+    quiz,
     report,
     slides,
     source_add,
@@ -26,6 +30,10 @@ TASK_REGISTRY: dict[str, TaskFn] = {
     "transcribe": transcribe.run,
     "gen-image": gen_image.run,
     "source-add": source_add.run,
+    "quiz": quiz.run,
+    "infographic": infographic.run,
+    "data-table": data_table.run,
+    "chat": chat.run,
 }
 
 __all__ = ["TASK_REGISTRY", "TaskFn", "NoteLike"]

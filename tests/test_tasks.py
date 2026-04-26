@@ -48,6 +48,10 @@ def test_registry_keys() -> None:
         "transcribe",
         "gen-image",
         "source-add",
+        "quiz",
+        "infographic",
+        "data-table",
+        "chat",
     }
 
 
