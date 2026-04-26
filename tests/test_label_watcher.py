@@ -172,6 +172,30 @@ def test_scan_once_source_add_stays_in_raw(vault: Vault) -> None:
     assert n.task_tags == []
 
 
+def test_scan_once_chat_stays_in_raw(vault: Vault) -> None:
+    def fake_chat(note: Note, *, arg: str | None = None) -> dict[str, Path]:
+        # mimic real chat: append to body and return {}
+        note.append_body("\n\n## Chat: q\n\nA.\n")
+        note.save()
+        return {}
+
+    watcher = LabelWatcher(vault, task_registry={"chat": fake_chat})
+    p = vault.raw / "ask.md"
+    p.write_text(
+        "---\ntitle: Q\ntags:\n  - 'task/chat'\nstatus: pending\n"
+        "notebook_id: nb-9\nchat_question: q\n---\nhi\n",
+        encoding="utf-8",
+    )
+    watcher.scan_once()
+
+    assert p.exists()
+    assert not (vault.wiki / "ask.md").exists()
+    n = Note(p)
+    assert n.status == "done"
+    assert n.task_tags == []
+    assert "## Chat: q" in n.body
+
+
 def test_scan_once_enqueues_when_worker_alive(vault: Vault) -> None:
     # Regression: previously scan_once called _process_note inline from the
     # main thread, racing with the watchdog-driven worker on the same file
