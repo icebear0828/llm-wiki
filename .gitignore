@@ -39,3 +39,6 @@ config.local.toml
 
 # Local RAG index (user cache, never committed)
 .llmwiki/
+
+# User profile (personal, not for the repo). Templates: USER.md.example.
+USER.md

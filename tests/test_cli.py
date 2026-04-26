@@ -109,12 +109,16 @@ def test_status_runs_on_mixed_vault(tmp_path: Path) -> None:
     assert "c.md" in result.output
 
 
-def test_context_regen_writes_three_files(tmp_path: Path) -> None:
+def test_context_regen_writes_agents_md_with_aliases(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "--path", str(tmp_path)])
     result = runner.invoke(app, ["context", "regen", "--vault", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    for name in ("claude.md", "agent.md", "gemini.md"):
-        assert (tmp_path / name).is_file()
+    agents = tmp_path / "AGENTS.md"
+    assert agents.is_file() and not agents.is_symlink()
+    for alias in ("CLAUDE.md", "GEMINI.md"):
+        path = tmp_path / alias
+        assert path.is_symlink()
+        assert path.resolve() == agents.resolve()
 
 
 def test_run_task_missing_module_exits_nonzero(

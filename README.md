@@ -131,3 +131,7 @@ uv run wikictl imagen generate "a cat"  # 一次性生图（不入 vault）
 `image_prompt` 可以是单字符串或字符串数组（一篇笔记多张图）。
 
 完整子命令见 `uv run wikictl imagen --help`。
+
+## wikicraft (Claude Code skill)
+
+`.claude/skills/wikicraft/SKILL.md` —— 把 raw/ 笔记**编织进** wiki/ 双向链接知识网络的 Claude Code skill。三个动作：`/wikicraft absorb`（喂新素材）/ `cleanup`（审计现有文章）/ `breakdown`（识别缺失文章）。继承 farzaa [personal-wiki-skill](https://gist.github.com/farzaa/c35ac0cfbeb957788650e36aabea836d) 的"理解而非归档"理念，适配本仓 Obsidian + watcher 架构。查询走 `wikictl rag query`，状态走 `wikictl status`。

@@ -1,0 +1,20 @@
+# USER.md — About Your Human
+
+> User profile / preferences. Loaded by OpenClaw and Hermes; ignored by Claude
+> Code / Gemini CLI / Codex (which read AGENTS.md). Copy this file to `USER.md`
+> and fill in. `USER.md` is gitignored.
+
+- **Name:**
+- **What to call them:**
+- **Pronouns:** _(optional)_
+- **Timezone:**
+- **Languages:**
+
+## Context
+
+_What do they care about? What projects? What annoys them? What makes them
+laugh? Build this over time._
+
+## Working preferences
+
+_Code style, commit style, review style, level of bluntness, favored tools._
