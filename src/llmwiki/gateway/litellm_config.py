@@ -10,6 +10,13 @@ PROVIDER_PREFIX: dict[str, str] = {
     "gemini": "gemini",
 }
 
+# LiteLLM resolves callback strings as files relative to the config yaml dir
+# (see litellm.proxy.types_utils.utils.get_instance_fn). To use our installed
+# package instance we drop a thin shim next to the yaml that re-exports it.
+RAG_SHIM_FILENAME = "llmwiki_rag_shim.py"
+RAG_SHIM_CALLBACK_PATH = "llmwiki_rag_shim.rag_instance"
+RAG_SHIM_BODY = "from llmwiki.gateway.rag_callback import rag_instance  # noqa: F401\n"
+
 
 def _yaml_str(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -49,10 +56,9 @@ def render_yaml(cfg: GatewayConfig) -> str:
     lines.append("litellm_settings:")
     lines.append(f"  request_timeout: {int(cfg.request_timeout)}")
     lines.append("  drop_params: true")
-
-    lines.append("")
-    lines.append("# RAG callback added by issue #14")
-    lines.append("# callbacks: []")
+    lines.append("  # RAG callback added by issue #14")
+    if cfg.rag_enabled:
+        lines.append(f"  callbacks: {RAG_SHIM_CALLBACK_PATH}")
     lines.append("")
     return "\n".join(lines)
 
@@ -61,4 +67,6 @@ def write_config(cfg: GatewayConfig, out: Path) -> Path:
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render_yaml(cfg), encoding="utf-8")
+    if cfg.rag_enabled:
+        (out.parent / RAG_SHIM_FILENAME).write_text(RAG_SHIM_BODY, encoding="utf-8")
     return out
