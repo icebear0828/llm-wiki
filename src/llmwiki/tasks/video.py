@@ -18,15 +18,25 @@ class _NoteWithPost(Protocol):
     path: Path
     _post: _PostLike
 
-    def save(self) -> None: ...
     def prepend_body(self, text: str) -> None: ...
 
 
+_TRUSTED_VIDEO_HOSTS = ("googleusercontent.com", "googlevideo.com")
+
+
 def _parse_video_url(stdout: str) -> str:
-    for line in stdout.splitlines():
-        line = line.strip()
-        if line.startswith("http://") or line.startswith("https://"):
-            return line
+    # vendor cli.ts:313 emits exactly `console.log(result.videoUrl)` after
+    # the workflow completes — i.e. the URL is the last non-empty stdout
+    # line. Anchor on that, not the first http(s) match, so a future
+    # progress logger written to stdout doesn't fool us.
+    for stripped in (line.strip() for line in reversed(stdout.splitlines())):
+        if not stripped:
+            continue
+        if stripped.startswith(("http://", "https://")) and any(
+            host in stripped for host in _TRUSTED_VIDEO_HOSTS
+        ):
+            return stripped
+        break
     raise notecraft.NotecraftError(
         "video: NotebookLM returned no URL on stdout (upstream may have silently dropped the job)"
     )
@@ -49,6 +59,9 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
 
     n = cast(_NoteWithPost, note)
     n._post.metadata["video_url"] = url
-    n.prepend_body(f"\n[Video overview]({url})\n\n")
-    n.save()
+    # angle-bracket markdown link form is robust to any URL that contains
+    # `)` or whitespace; plain `[text](url)` would break in those cases.
+    n.prepend_body(f"\n[Video overview](<{url}>)\n\n")
+    # Watcher persists the in-memory _post mutation via its own note.save()
+    # after the task returns, so we don't save here ourselves.
     return {}

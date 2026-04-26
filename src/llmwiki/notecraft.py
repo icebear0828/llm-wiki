@@ -121,7 +121,7 @@ def _write_debug_log(
         f"--- stdout ---\n{stdout}\n"
         f"--- stderr ---\n{stderr}\n"
     )
-    path.write_text(body)
+    path.write_text(body, encoding="utf-8")
 
 
 def _newest_artifact(out_dir: Path, cmd: str, since: float) -> Path:
@@ -147,7 +147,14 @@ def _newest_artifact(out_dir: Path, cmd: str, since: float) -> Path:
 
 @dataclass
 class RunResult:
-    artifact: Path
+    """Outcome of a notecraft.run call.
+
+    `artifact` is None when expect_artifact=False (the command produced no
+    local file); callers wanting the directory should use `out_dir` instead.
+    """
+
+    artifact: Path | None
+    out_dir: Path
     stdout: str
     stderr: str
 
@@ -216,11 +223,12 @@ def run(
         tail = err[-2000:] if err else f"exit code {result.returncode}"
         raise cls(tail)
 
-    artifact = out_dir if not expect_artifact else _newest_artifact(out_dir, cmd, since=start)
+    artifact = _newest_artifact(out_dir, cmd, since=start) if expect_artifact else None
     if return_full:
         return RunResult(
             artifact=artifact,
+            out_dir=out_dir,
             stdout=result.stdout or "",
             stderr=result.stderr or "",
         )
-    return artifact
+    return artifact if artifact is not None else out_dir

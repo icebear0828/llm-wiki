@@ -41,7 +41,8 @@ def _patch_run(
             captured["return_full"] = return_full
             captured["extra_args"] = list(extra_args or [])
         return notecraft.RunResult(
-            artifact=out_dir,
+            artifact=None,
+            out_dir=out_dir,
             stdout=stdout,
             stderr=stderr,
         )
@@ -53,9 +54,10 @@ def test_video_writes_url_to_frontmatter_and_returns_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: dict[str, object] = {}
+    url = "https://lh3.googleusercontent.com/notebooklm/AKXwDQabc=m22"
     _patch_run(
         monkeypatch,
-        stdout="https://notebooklm.googleusercontent.com/stream/abc.mp4\n",
+        stdout=f"{url}\n",
         stderr="Notebook: https://notebooklm.google.com/notebook/nb-x\n",
         captured=captured,
     )
@@ -71,13 +73,10 @@ def test_video_writes_url_to_frontmatter_and_returns_empty(
     assert captured["pass_output_dir"] is True
     assert captured["return_full"] is True
 
-    n2 = Note(note.path)
-    assert (
-        n2._post.metadata["video_url"]
-        == "https://notebooklm.googleusercontent.com/stream/abc.mp4"
-    )
-    assert "[Video overview]" in n2._post.content
-    assert "abc.mp4" in n2._post.content
+    # video.run mutates the in-memory _post; the watcher's later set_status/save
+    # is what persists. Test reflects that contract — don't reload from disk.
+    assert note._post.metadata["video_url"] == url
+    assert f"[Video overview](<{url}>)" in note._post.content
 
 
 def test_video_raises_when_stdout_has_no_url(
@@ -90,3 +89,29 @@ def test_video_raises_when_stdout_has_no_url(
     )
     with pytest.raises(notecraft.NotecraftError):
         video.run(note)
+
+
+def test_video_rejects_url_from_untrusted_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # If vendor ever logs a progress URL ahead of the result URL, we must
+    # not silently pick it up. Both untrusted-only and untrusted-then-trusted
+    # cases are covered by anchoring on the *last* line.
+    _patch_run(monkeypatch, stdout="https://example.com/progress\n", stderr="")
+    note = _make_note(tmp_path, "title: T\nsource: https://x\nstatus: pending\n")
+    with pytest.raises(notecraft.NotecraftError):
+        video.run(note)
+
+
+def test_video_picks_last_url_when_multiple_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = "https://lh3.googleusercontent.com/notebooklm/xyz=m22"
+    _patch_run(
+        monkeypatch,
+        stdout=f"https://example.com/preflight\n{real}\n",
+        stderr="",
+    )
+    note = _make_note(tmp_path, "title: T\nsource: https://x\nstatus: pending\n")
+    video.run(note)
+    assert note._post.metadata["video_url"] == real

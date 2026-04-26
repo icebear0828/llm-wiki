@@ -27,7 +27,8 @@ def _patch(monkeypatch: pytest.MonkeyPatch, captured: dict[str, object]) -> None
         artifact = out_dir / f"{cmd}-fake.bin"
         if kwargs.get("return_full"):
             return notecraft.RunResult(
-                artifact=artifact,
+                artifact=artifact if kwargs.get("expect_artifact", True) else None,
+                out_dir=out_dir,
                 stdout=str(captured.get("fake_stdout", "")),
                 stderr="",
             )
