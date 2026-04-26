@@ -111,6 +111,10 @@ def daemon(
     watcher = LabelWatcher(vault)  # type: ignore[call-arg]
     autopilot = GitAutopilot(vault, debounce_seconds=cfg.debounce_seconds)  # type: ignore[call-arg]
 
+    import threading
+
+    shutdown = threading.Event()
+
     def _stop(*_: object) -> None:
         console.print("[yellow]stopping...[/yellow]")
         try:
@@ -121,7 +125,7 @@ def daemon(
             autopilot.stop()
         except Exception:
             pass
-        sys.exit(0)
+        shutdown.set()
 
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
@@ -129,7 +133,10 @@ def daemon(
     watcher.start()
     autopilot.start()
     console.print(f"[green]daemon running[/green] vault={cfg.vault_root}")
-    signal.pause()
+    # Don't use signal.pause(): SIGCHLD from subprocesses would wake it and
+    # let the function return. An Event only set by SIGINT/SIGTERM is correct.
+    shutdown.wait()
+    sys.exit(0)
 
 
 @app.command()

@@ -74,6 +74,8 @@ class GitAutopilot:
         self._observer = Observer()
         self._observer.schedule(handler, str(self.vault.root), recursive=True)
         self._observer.start()
+
+    def run_forever(self) -> None:
         try:
             while not self._stop_event.is_set():
                 self._stop_event.wait(0.5)
