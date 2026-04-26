@@ -21,3 +21,22 @@ Vault 根 = 项目根 = git 仓库。后台守护进程扫 frontmatter 的 `task
 MVP 闭环开发中，进度见 [Issues](../../issues) 与 [MVP closed loop](../../milestone/1) milestone。
 
 完整 PRD 与延后子系统见 epic issue **PRD v2.0 全景**。
+
+## Gateway (LiteLLM)
+
+本地启一个 LiteLLM proxy，同时暴露三家协议入口，转发到用户配置的反代 base URL。给 Chatbox / Claude Code / Gemini CLI 一个统一接入点。
+
+```
+http://localhost:8080/v1/chat/completions                       # OpenAI
+http://localhost:8080/v1/messages                               # Anthropic
+http://localhost:8080/v1beta/models/<model>:generateContent     # Gemini
+```
+
+```bash
+uv run wikictl gateway init       # 写 <vault>/gateway.toml 模板
+uv run wikictl gateway start      # 起 LiteLLM proxy
+uv run wikictl gateway status     # /health 检查
+uv run wikictl gateway config     # 打印三家客户端环境变量
+```
+
+完整子命令见 `uv run wikictl gateway --help`。

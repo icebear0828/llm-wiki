@@ -282,5 +282,118 @@ def status(
         console.print(table)
 
 
+gateway_app = typer.Typer(no_args_is_help=True, help="API gateway (LiteLLM proxy + RAG)")
+app.add_typer(gateway_app, name="gateway")
+
+
+_GATEWAY_CONFIG_SECTIONS = """\
+# Chatbox / OpenAI-compatible tools
+OPENAI_API_BASE=http://localhost:{port}/v1
+OPENAI_API_KEY={key}
+
+# Claude Code / Anthropic SDK
+ANTHROPIC_BASE_URL=http://localhost:{port}
+ANTHROPIC_API_KEY={key}
+
+# Gemini CLI / Google AI SDK
+GEMINI_API_KEY={key}
+GEMINI_API_BASE=http://localhost:{port}/v1beta
+"""
+
+
+def _gateway_yaml_path(vault_root: Path) -> Path:
+    return vault_root / ".llmwiki" / "litellm.generated.yaml"
+
+
+@gateway_app.command("init")
+def gateway_init(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    from llmwiki.gateway.config import CONFIG_FILENAME, write_default_template
+
+    root = _discover_vault_root(vault_path)
+    target, written = write_default_template(root)
+    if written:
+        console.print(f"[green]wrote[/green] {target.relative_to(root)}")
+    else:
+        console.print(f"[dim]{CONFIG_FILENAME} already exists, leaving untouched[/dim]")
+
+
+@gateway_app.command("start")
+def gateway_start(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+    port: int | None = typer.Option(None, "--port", help="Override gateway.toml port"),
+    foreground: bool = typer.Option(
+        False, "--foreground/--background", help="Stream proxy logs to stdout"
+    ),
+    health_timeout: float = typer.Option(20.0, "--health-timeout"),
+) -> None:
+    from dataclasses import replace
+
+    from llmwiki.gateway.config import GatewayConfig
+    from llmwiki.gateway.litellm_config import write_config
+    from llmwiki.gateway.server import health_check, start
+
+    root = _discover_vault_root(vault_path)
+    cfg = GatewayConfig.load(root)
+    if port is not None:
+        cfg = replace(cfg, port=port)
+
+    if not cfg.configured_backends():
+        console.print(
+            "[yellow]warning:[/yellow] no backends have api_base configured. "
+            f"Edit {root / 'gateway.toml'} first."
+        )
+
+    yaml_path = _gateway_yaml_path(root)
+    write_config(cfg, yaml_path)
+    console.print(f"[cyan]wrote[/cyan] {yaml_path}")
+
+    proc = start(cfg, yaml_path)
+    console.print(f"[green]litellm proxy spawned[/green] pid={proc.pid} port={cfg.port}")
+    ready = health_check(cfg.port, timeout=health_timeout)
+    if not ready:
+        console.print("[red]health check failed[/red] (see proxy logs)")
+        proc.terminate()
+        raise typer.Exit(code=1)
+    console.print(f"[green]ready[/green] http://localhost:{cfg.port}")
+
+    if foreground:
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            proc.terminate()
+
+
+@gateway_app.command("status")
+def gateway_status(
+    vault_path: Path | None = typer.Option(None, "--vault"),
+    port: int | None = typer.Option(None, "--port"),
+) -> None:
+    from llmwiki.gateway.config import GatewayConfig
+    from llmwiki.gateway.server import health_check
+
+    root = _discover_vault_root(vault_path)
+    cfg = GatewayConfig.load(root)
+    target_port = port if port is not None else cfg.port
+    ok = health_check(target_port, timeout=2.0)
+    if ok:
+        console.print(f"[green]gateway healthy[/green] port={target_port}")
+        raise typer.Exit(code=0)
+    console.print(f"[red]gateway not responding[/red] port={target_port}")
+    raise typer.Exit(code=1)
+
+
+@gateway_app.command("config")
+def gateway_config(
+    vault_path: Path | None = typer.Option(None, "--vault"),
+) -> None:
+    from llmwiki.gateway.config import GatewayConfig
+
+    root = _discover_vault_root(vault_path)
+    cfg = GatewayConfig.load(root)
+    console.print(_GATEWAY_CONFIG_SECTIONS.format(port=cfg.port, key=cfg.master_key))
+
+
 if __name__ == "__main__":
     app()
