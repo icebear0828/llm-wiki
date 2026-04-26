@@ -203,7 +203,7 @@ def run_task(
 ) -> None:
     try:
         from llmwiki.label_watcher import LabelWatcher  # type: ignore[import-not-found]
-        from llmwiki.vault import Vault  # type: ignore[import-not-found]
+        from llmwiki.vault import Note, Vault  # type: ignore[import-not-found]
     except ImportError as e:
         console.print(f"[red]missing module:[/red] {e}")
         console.print("[yellow]Run after #2/#3 merged.[/yellow]")
@@ -212,7 +212,8 @@ def run_task(
     root = _discover_vault_root(vault_path)
     vault = Vault(root)  # type: ignore[call-arg]
     watcher = LabelWatcher(vault)  # type: ignore[call-arg]
-    watcher._process_note(note.resolve())  # type: ignore[attr-defined]
+    note_obj = Note(note.resolve())  # type: ignore[call-arg]
+    watcher._process_note(note_obj)  # type: ignore[attr-defined]
     console.print(f"[green]processed[/green] {note}")
 
 
