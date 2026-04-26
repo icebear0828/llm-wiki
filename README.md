@@ -95,6 +95,28 @@ uv run wikictl stt transcribe foo.mp3    # 一次性转录单文件
 
 完整子命令见 `uv run wikictl stt --help`。
 
+## Notifications
+
+daemon 在某些异常时直接给你的 Telegram 推送（不需要再去 vault 翻 `assets/ALERT-*.md`）。
+
+配置：在 `im.toml` 的 `[telegram]` 段填 `notify_chat_id`（int）：
+
+```toml
+[telegram]
+bot_token = "..."         # 或 env LLMWIKI_TG_TOKEN
+notify_chat_id = 12345    # 你的 chat_id
+```
+
+拿 `chat_id`：先给 bot 发任意一条消息，然后浏览器访问
+`https://api.telegram.org/bot<TOKEN>/getUpdates`，`result[0].message.chat.id` 就是。
+
+去抖：每个 `throttle_key` 默认 1 小时窗口内只推一次，状态记在
+`<vault>/.llmwiki/notify-state.json`。
+
+当前会触发推送的事件：
+
+- `SessionExpired` —— NotebookLM session 失效，需要 `npx notebooklm export-session`
+
 ## Reverse generation (`#task/gen-image`)
 
 笔记 frontmatter 加 `image_prompt: "..."` + tag `task/gen-image` → daemon 调上游图像模型 → 落到 `assets/images/<UTC-ts>-<n>.{png|jpg}` → 笔记顶部插入 `![[...]]`。

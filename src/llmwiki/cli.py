@@ -108,7 +108,17 @@ def daemon(
 
     cfg = Config.load(vault_path)
     vault = Vault(cfg.vault_root)  # type: ignore[call-arg]
-    watcher = LabelWatcher(vault)  # type: ignore[call-arg]
+
+    im_config = None
+    try:
+        from llmwiki.im.config import ImConfig
+        im_config = ImConfig.load(cfg.vault_root)
+    except FileNotFoundError:
+        im_config = None
+    except ImportError:
+        im_config = None
+
+    watcher = LabelWatcher(vault, im_config=im_config)  # type: ignore[call-arg]
     autopilot = GitAutopilot(vault, debounce_seconds=cfg.debounce_seconds)  # type: ignore[call-arg]
 
     import threading
