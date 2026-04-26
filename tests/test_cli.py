@@ -156,6 +156,25 @@ def test_daemon_missing_module_exits_nonzero(
     assert "missing module" in result.output or "Run after" in result.output
 
 
+def test_im_telegram_missing_token_exits_nonzero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("LLMWIKI_TG_TOKEN", raising=False)
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    result = runner.invoke(app, ["im", "telegram", "--vault", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "LLMWIKI_TG_TOKEN" in result.output or "bot_token" in result.output
+
+
+def test_im_help_lists_telegram_and_start(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["im", "--help"])
+    assert result.exit_code == 0
+    assert "telegram" in result.output
+    assert "start" in result.output
+    assert "init" in result.output
+    assert "http" in result.output
+
+
 def test_run_task_calls_process_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
