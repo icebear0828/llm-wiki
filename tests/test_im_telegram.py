@@ -268,7 +268,7 @@ def test_document_message(
     assert captured["msg"].title == "report.pdf"
 
 
-def test_voice_message_adds_voice_tag(
+def test_voice_message_adds_transcribe_tag(
     vault: Vault, cfg_open: ImConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: dict[str, Any] = {}
@@ -296,7 +296,8 @@ def test_voice_message_adds_voice_tag(
     assert captured["msg"].kind == "voice"
     assert captured["msg"].voice_path is not None
     assert captured["msg"].voice_path.suffix == ".ogg"
-    assert "task/voice" in captured["msg"].tags
+    assert "task/transcribe" in captured["msg"].tags
+    assert "task/voice" not in captured["msg"].tags
 
 
 def test_unauthorized_user_rejected(
