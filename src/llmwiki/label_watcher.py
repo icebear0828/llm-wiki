@@ -40,7 +40,7 @@ class LabelWatcher:
     def __init__(
         self,
         vault: Vault,
-        task_registry: dict[str, Callable[[Note], dict[str, Path]]] | None = None,
+        task_registry: dict[str, Callable[..., dict[str, Path]]] | None = None,
     ) -> None:
         self.vault = vault
         self._registry = task_registry
@@ -49,7 +49,7 @@ class LabelWatcher:
         self._worker: threading.Thread | None = None
         self._stop_event = threading.Event()
 
-    def _resolve_registry(self) -> dict[str, Callable[[Note], dict[str, Path]]]:
+    def _resolve_registry(self) -> dict[str, Callable[..., dict[str, Path]]]:
         if self._registry is not None:
             return self._registry
         try:
@@ -151,24 +151,24 @@ class LabelWatcher:
 
     def _process_note(self, note: Note) -> None:
         registry = self._resolve_registry()
-        task_names = list(note.task_tags)
+        task_specs: list[tuple[str, str | None]] = list(note.task_tags)
 
         note.set_status("processing")
         note.save()
 
         all_artifacts: dict[str, Path] = {}
         succeeded: list[str] = []
-        rate_limited_pending: list[str] = []
+        rate_limited_pending: list[tuple[str, str | None]] = []
         terminal_error: Exception | None = None
         session_expired = False
 
-        for name in task_names:
+        for name, arg in task_specs:
             fn = registry.get(name)
             if fn is None:
                 terminal_error = KeyError(f"no task registered: {name}")
                 continue
             try:
-                result = fn(note)
+                result = fn(note, arg=arg)
             except Exception as e:
                 kind = type(e).__name__
                 if kind == "SessionExpired":
@@ -176,7 +176,7 @@ class LabelWatcher:
                     self._write_session_alert(note.path)
                     break
                 if kind == "RateLimited":
-                    rate_limited_pending.append(name)
+                    rate_limited_pending.append((name, arg))
                     continue
                 terminal_error = e
                 continue
@@ -184,14 +184,14 @@ class LabelWatcher:
                 all_artifacts.update(result)
             succeeded.append(name)
 
-        for name in rate_limited_pending:
+        for name, arg in rate_limited_pending:
             time.sleep(60)
             fn = registry.get(name)
             if fn is None:
                 terminal_error = KeyError(f"no task registered: {name}")
                 continue
             try:
-                result = fn(note)
+                result = fn(note, arg=arg)
             except Exception as e:
                 kind = type(e).__name__
                 if kind == "SessionExpired":
@@ -215,6 +215,15 @@ class LabelWatcher:
             return
 
         if succeeded:
+            # source-add is a one-way feed; don't ingest into wiki/
+            if all(name == "source-add" for name in succeeded):
+                for name in succeeded:
+                    note.remove_task(name)
+                note.set_status("done")
+                if terminal_error is not None:
+                    note.set_status("error", error=str(terminal_error))
+                note.save()
+                return
             self._trigger_autopilot_message(f"[Auto] ingest {note.path.name}")
             new_note = ingest.move_to_wiki(note, self.vault, all_artifacts)
             for name in succeeded:

@@ -8,7 +8,7 @@ from ._common import out_dir_for, source_from
 from ._types import NoteLike
 
 
-def run(note: NoteLike) -> dict[str, Path]:
+def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
     out = out_dir_for("report")
     artifact = notecraft.run(
         "report",

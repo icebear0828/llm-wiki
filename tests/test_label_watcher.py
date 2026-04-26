@@ -31,10 +31,10 @@ def test_scan_once_happy(vault: Vault) -> None:
     art = vault.assets / "fake.bin"
     art.write_bytes(b"x")
 
-    def fake_task(note: Note) -> dict[str, Path]:
+    def fake_task(note: Note, *, arg: str | None = None) -> dict[str, Path]:
         return {"fake": art}
 
-    registry: dict[str, Callable[[Note], dict[str, Path]]] = {"fake": fake_task}
+    registry: dict[str, Callable[..., dict[str, Path]]] = {"fake": fake_task}
     watcher = LabelWatcher(vault, task_registry=registry)
     _make_note(vault, tag="fake")
     watcher.scan_once()
@@ -52,7 +52,7 @@ def test_scan_once_session_expired_keeps_tags(vault: Vault) -> None:
     class SessionExpired(Exception):
         pass
 
-    def bad_task(note: Note) -> dict[str, Path]:
+    def bad_task(note: Note, *, arg: str | None = None) -> dict[str, Path]:
         raise SessionExpired("no session")
 
     watcher = LabelWatcher(vault, task_registry={"fake": bad_task})
@@ -67,7 +67,7 @@ def test_scan_once_session_expired_keeps_tags(vault: Vault) -> None:
 
 
 def test_scan_once_generic_error_keeps_tags(vault: Vault) -> None:
-    def bad_task(note: Note) -> dict[str, Path]:
+    def bad_task(note: Note, *, arg: str | None = None) -> dict[str, Path]:
         raise RuntimeError("boom")
 
     watcher = LabelWatcher(vault, task_registry={"fake": bad_task})
@@ -87,6 +87,42 @@ def test_scan_once_no_task_tags_skipped(vault: Vault) -> None:
     watcher.scan_once()
     assert p.exists()
     assert not (vault.wiki / "x.md").exists()
+
+
+def test_scan_once_passes_tag_arg_to_task(vault: Vault) -> None:
+    captured: dict[str, str | None] = {}
+
+    def fake_task(note: Note, *, arg: str | None = None) -> dict[str, Path]:
+        captured["arg"] = arg
+        return {}
+
+    watcher = LabelWatcher(vault, task_registry={"fake": fake_task})
+    p = vault.raw / "argnote.md"
+    p.write_text(
+        "---\ntitle: T\ntags:\n  - 'task/fake:hello'\nstatus: pending\n---\nhi\n",
+        encoding="utf-8",
+    )
+    watcher.scan_once()
+    assert captured["arg"] == "hello"
+
+
+def test_scan_once_source_add_stays_in_raw(vault: Vault) -> None:
+    def fake_source_add(note: Note, *, arg: str | None = None) -> dict[str, Path]:
+        return {}
+
+    watcher = LabelWatcher(vault, task_registry={"source-add": fake_source_add})
+    p = vault.raw / "feed.md"
+    p.write_text(
+        "---\ntitle: F\ntags:\n  - 'task/source-add:nb-1'\nstatus: pending\nsource: https://x\n---\nhi\n",
+        encoding="utf-8",
+    )
+    watcher.scan_once()
+
+    assert p.exists()
+    assert not (vault.wiki / "feed.md").exists()
+    n = Note(p)
+    assert n.status == "done"
+    assert n.task_tags == []
 
 
 def test_scan_once_enqueues_when_worker_alive(vault: Vault) -> None:
