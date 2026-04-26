@@ -1,0 +1,12 @@
+http_port = 8081
+# http_token = "<random>"   # uncomment to require X-Llmwiki-Token header
+default_tags = []
+url_fetch_enabled = true
+url_fetch_timeout = 30
+
+[telegram]
+bot_token = ""               # or set env LLMWIKI_TG_TOKEN
+allowed_user_ids = []        # whitelist; empty = anyone
+[telegram.command_default_tags]
+# audio = ["task/audio"]
+# report = ["task/report"]
