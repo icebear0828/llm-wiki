@@ -1,0 +1,6 @@
+base_url = "https://proxypool.store/s-2026/v1"
+api_key = "sk-gateway-vps-2026"   # or set env LLMWIKI_IMAGEN_KEY
+model = "opal/bananapro"
+output_subdir = "assets/images"
+size = "1024x1024"
+timeout = 300.0

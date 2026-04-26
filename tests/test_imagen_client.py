@@ -16,12 +16,23 @@ from llmwiki.imagen.client import (
 from llmwiki.imagen.config import ImagenConfig
 
 
-def _cfg(api_key: str = "sk-test") -> ImagenConfig:
+def _cfg(api_key: str = "sk-test", *, backend: str = "openai") -> ImagenConfig:
     return ImagenConfig(
+        backend=backend,
         base_url="https://example.test/v1",
         api_key=api_key,
         model="opal/bananapro",
         size="1024x1024",
+        timeout=10.0,
+    )
+
+
+def _gemini_cfg(api_key: str = "sk-test") -> ImagenConfig:
+    return ImagenConfig(
+        backend="gemini",
+        base_url="https://example.test",
+        api_key=api_key,
+        model="opal/gemini-3-pro-image-preview",
         timeout=10.0,
     )
 
@@ -203,4 +214,91 @@ def test_imagen_error_on_missing_data_key(
     _patch_client(monkeypatch, fake)
     client = ImagenClient(_cfg())
     with pytest.raises(ImagenError, match="no images returned"):
+        client.generate("x", n=1, out_dir=tmp_path / "out")
+
+
+def test_invalid_backend_raises() -> None:
+    cfg = ImagenConfig(backend="bogus", base_url="x", api_key="k", model="m")
+    with pytest.raises(ValueError, match="must be 'gemini' or 'openai'"):
+        ImagenClient(cfg)
+
+
+def test_gemini_generate_inline_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = b"\xff\xd8\xff\xe0fake-jpeg"
+    payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"inlineData": {"mimeType": "image/jpeg", "data": base64.b64encode(raw).decode()}}
+                    ]
+                }
+            }
+        ]
+    }
+    fake = _FakeClient(post_response=_FakeResponse(200, json_data=payload))
+    _patch_client(monkeypatch, fake)
+
+    client = ImagenClient(_gemini_cfg())
+    paths = client.generate("a parrot", n=1, out_dir=tmp_path / "out")
+
+    assert len(paths) == 1
+    assert paths[0].suffix == ".jpg"
+    assert paths[0].read_bytes() == raw
+    # Gemini route uses x-goog-api-key, not Bearer
+    assert fake.post_calls[0]["headers"]["x-goog-api-key"] == "sk-test"
+    # URL contains :generateContent
+    assert ":generateContent" in fake.post_calls[0]["url"]
+    # body contains contents + responseModalities=IMAGE
+    body = fake.post_calls[0]["json"]
+    assert body["generationConfig"]["responseModalities"] == ["IMAGE"]
+    assert body["contents"][0]["parts"][0]["text"] == "a parrot"
+
+
+def test_gemini_n_three_issues_three_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = b"img"
+    payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"inlineData": {"mimeType": "image/png", "data": base64.b64encode(raw).decode()}}
+                    ]
+                }
+            }
+        ]
+    }
+
+    class _MultiPostFake(_FakeClient):
+        def __init__(self) -> None:
+            super().__init__(post_response=_FakeResponse(200, json_data=payload))
+
+        def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str]) -> _FakeResponse:
+            self.post_calls.append({"url": url, "json": json, "headers": headers})
+            return _FakeResponse(200, json_data=payload)
+
+    fake = _MultiPostFake()
+    _patch_client(monkeypatch, fake)
+    client = ImagenClient(_gemini_cfg())
+    paths = client.generate("triple", n=3, out_dir=tmp_path / "out")
+    assert len(paths) == 3
+    assert len(fake.post_calls) == 3
+
+
+def test_gemini_no_inline_data_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "candidates": [
+            {"content": {"parts": [{"text": "I cannot generate images."}]}}
+        ]
+    }
+    fake = _FakeClient(post_response=_FakeResponse(200, json_data=payload))
+    _patch_client(monkeypatch, fake)
+    client = ImagenClient(_gemini_cfg())
+    with pytest.raises(ImagenError, match="no inlineData"):
         client.generate("x", n=1, out_dir=tmp_path / "out")

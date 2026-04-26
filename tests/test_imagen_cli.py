@@ -17,7 +17,8 @@ def test_imagen_init_writes_template(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert (tmp_path / "imagen.toml").is_file()
     text = (tmp_path / "imagen.toml").read_text(encoding="utf-8")
-    assert "opal/bananapro" in text
+    assert "opal/gemini-3-pro-image-preview" in text
+    assert 'backend = "gemini"' in text
 
 
 def test_imagen_init_idempotent(tmp_path: Path) -> None:
