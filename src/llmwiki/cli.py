@@ -119,7 +119,16 @@ def daemon(
         im_config = None
 
     watcher = LabelWatcher(vault, im_config=im_config)  # type: ignore[call-arg]
-    autopilot = GitAutopilot(vault, debounce_seconds=cfg.debounce_seconds)  # type: ignore[call-arg]
+    try:
+        from llmwiki.autopilot_config import AutopilotConfig
+        autopilot_cfg = AutopilotConfig.load(cfg.vault_root)
+    except (ImportError, FileNotFoundError, ValueError):
+        autopilot_cfg = None
+    autopilot = GitAutopilot(  # type: ignore[call-arg]
+        vault,
+        debounce_seconds=cfg.debounce_seconds,
+        autopilot_cfg=autopilot_cfg,
+    )
 
     import threading
 
