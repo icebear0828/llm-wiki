@@ -15,5 +15,6 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
         source=source_from(note),
         out_dir=out,
         extra_args=["--format", "presenter"],
+        timeout=3600.0,
     )
     return {"slides": artifact}
