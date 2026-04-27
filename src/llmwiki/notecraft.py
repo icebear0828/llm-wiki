@@ -186,12 +186,14 @@ def run(
     expect_artifact: bool = True,
     pass_output_dir: bool | None = None,
     return_full: bool = False,
+    notebook_id: str | None = None,
 ) -> Path | RunResult:
     _ensure_installed()
     out_dir.mkdir(parents=True, exist_ok=True)
     if pass_output_dir is None:
         pass_output_dir = expect_artifact
     output_args: list[str] = ["-o", str(out_dir)] if pass_output_dir else []
+    notebook_args: list[str] = ["--notebook", notebook_id] if notebook_id else []
     argv = [
         "npx",
         "notebooklm",
@@ -201,6 +203,7 @@ def run(
         "auto",
         *source.as_args(),
         *output_args,
+        *notebook_args,
         *(extra_args or []),
     ]
     start = time.time()

@@ -33,6 +33,7 @@ def _patch_run(
         expect_artifact=True,
         pass_output_dir=None,
         return_full=False,
+        notebook_id=None,
     ):
         if captured is not None:
             captured["cmd"] = cmd

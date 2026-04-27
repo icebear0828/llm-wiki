@@ -29,6 +29,7 @@ def _patch_run(
         expect_artifact=True,
         return_full=False,
         pass_output_dir=None,
+        notebook_id=None,
     ):
         captured["cmd"] = cmd
         captured["source"] = source

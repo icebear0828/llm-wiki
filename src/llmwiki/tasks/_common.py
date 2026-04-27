@@ -11,6 +11,27 @@ from ._types import NoteLike
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+def lookup_notebook_id(note: NoteLike) -> str | None:
+    """Find a previously-recorded NotebookLM workspace id for this note.
+
+    Resolution order: frontmatter `notebook_id` (explicit override) →
+    vault NotebookIndex keyed by `note.path.stem`. Returns None when
+    nothing is recorded yet — the caller will create a fresh notebook.
+    """
+    post = getattr(note, "_post", None)
+    if post is not None:
+        meta = getattr(post, "metadata", None)
+        if isinstance(meta, dict):
+            value = meta.get("notebook_id")
+            if isinstance(value, str) and value:
+                return value
+    try:
+        vault = Vault.discover(Path(note.path).parent)
+    except FileNotFoundError:
+        return None
+    return NotebookIndex(vault).get(Path(note.path).stem)
+
+
 def persist_notebook_id(note: NoteLike, notebook_id: str | None) -> None:
     """Write notebook_id back to note frontmatter + vault NotebookIndex.
 
