@@ -104,7 +104,7 @@ def _ensure_installed() -> None:
 
 def _classify(stderr: str) -> type[NotecraftError]:
     s = stderr.lower()
-    if "no session available" in s or "audio download returned login page" in s or "session expired" in s:
+    if "no session available" in s or "audio download returned login page" in s:
         return SessionExpired
     if "rate limited" in s or "429" in s:
         return RateLimited
@@ -187,7 +187,6 @@ def run(
     pass_output_dir: bool | None = None,
     return_full: bool = False,
     notebook_id: str | None = None,
-    retry_on_auth: bool = True,
 ) -> Path | RunResult:
     _ensure_installed()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -241,39 +240,6 @@ def run(
         err = (result.stderr or "").strip()
         cls = _classify(err)
         tail = err[-2000:] if err else f"exit code {result.returncode}"
-        
-        if cls is SessionExpired and retry_on_auth:
-            profile_path = os.path.expanduser("~/.api-reverser/gemini-profile")
-            if os.path.exists(profile_path):
-                print(f"Notecraft: Session expired, attempting auto-login via {profile_path}...")
-                try:
-                    login_res = subprocess.run(
-                        ["npx", "notebooklm", "export-session", "--profile", profile_path, "--headless"],
-                        cwd=REPO_ROOT,
-                        capture_output=True,
-                        text=True,
-                        timeout=120.0
-                    )
-                    if login_res.returncode == 0:
-                        print("Notecraft: Auto-login successful, retrying original command...")
-                        return run(
-                            cmd,
-                            source=source,
-                            out_dir=out_dir,
-                            extra_args=extra_args,
-                            timeout=timeout,
-                            subcommand=subcommand,
-                            expect_artifact=expect_artifact,
-                            pass_output_dir=pass_output_dir,
-                            return_full=return_full,
-                            notebook_id=notebook_id,
-                            retry_on_auth=False,
-                        )
-                    else:
-                        tail = f"Auto-login failed: {login_res.stderr[-500:]}\nOriginal error: {tail}"
-                except subprocess.TimeoutExpired:
-                    tail = f"Auto-login timed out.\nOriginal error: {tail}"
-
         raise cls(tail)
 
     artifact = _newest_artifact(out_dir, cmd, since=start) if expect_artifact else None
