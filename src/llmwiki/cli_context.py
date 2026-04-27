@@ -166,7 +166,7 @@ Upon completion, the watcher removes the corresponding `task/*` tag, sets `statu
 
 ## Do-Not-Break Guardrails
 
-- Do not `git push`: autopilot only commits locally; pushes are user-triggered.
+- Auto-push is opt-in via `<vault>/autopilot.toml` (`[push] enabled = true`); the safe default still only commits locally. Never `git push --force`; if you must rewrite, use `force-with-lease`.
 - Do not delete `.obsidian/`: it holds vault config (attachmentFolderPath, link format, etc.).
 - Do not bypass the watcher and write `wiki/` directly: it breaks the ingest pipeline and frontmatter state machine.
 - Do not hand-edit the `artifacts:` field outside of frontmatter: the watcher owns that field.
@@ -178,7 +178,7 @@ Upon completion, the watcher removes the corresponding `task/*` tag, sets `statu
 - Python: use `uv run`; bare `python`/`pip` is forbidden.
 - TypeScript: `any` is forbidden.
 - E2E: changes involving notecraft / NotebookLM must pass live calls ≥3 consecutive successes.
-- No push: `git_autopilot` only commits locally; pushing is triggered explicitly by the user.
+- Push is opt-in via `autopilot.toml`; default is local-commit-only. `--force` is forbidden; `force-with-lease` is the only allowed history-rewrite path.
 - Commit format: `<type>: <description>`; auto-generated artifacts use `[Auto] ...`.
 """
 

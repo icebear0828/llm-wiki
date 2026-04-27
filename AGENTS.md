@@ -89,6 +89,10 @@ Upon completion, the watcher removes the corresponding `task/*` tag, sets `statu
 
 ```
 wiki/
+├── aistudio-skills/
+│   ├── app/
+│   ├── skills/
+│   └── copy_skills.cjs
 ├── assets/
 │   ├── audio/
 │   ├── chat/
@@ -99,7 +103,10 @@ wiki/
 │   ├── report/
 │   ├── slides/
 │   ├── source-add/
-│   └── video/
+│   ├── video/
+│   └── ALERT-session-expired.md
+├── optional-skills/
+│   └── llmwiki/
 ├── raw/
 │   ├── 20260426-035707-http-raw.md
 │   ├── 20260426-035707-https-en-wikipedia-org-wiki-markdown.md
@@ -113,12 +120,14 @@ wiki/
 │   ├── e2e-audio-1777205922.md
 │   ├── e2e-chat-1777208379.md
 │   ├── e2e-infographic-1777207616.md
-│   ├── e2e-sourceadd-1777208266.md
-│   └── e2e-video-1777208418.md
+│   └── e2e-sourceadd-1777208266.md
+├── skills/
+│   └── wikicraft/
 ├── src/
 │   └── llmwiki/
 ├── tests/
 │   ├── e2e/
+│   ├── test_autopilot_config.py
 │   ├── test_chat_task.py
 │   ├── test_cli.py
 │   ├── test_cli_context.py
@@ -128,6 +137,7 @@ wiki/
 │   ├── test_gemini_middleware.py
 │   ├── test_gen_image_task.py
 │   ├── test_git_autopilot.py
+│   ├── test_git_autopilot_push.py
 │   ├── test_im_common.py
 │   ├── test_im_config.py
 │   ├── test_im_http.py
@@ -139,7 +149,10 @@ wiki/
 │   ├── test_label_watcher.py
 │   ├── test_litellm_config.py
 │   ├── test_litellm_config_with_rag.py
+│   ├── test_notebook_index.py
+│   ├── test_notebook_lookup.py
 │   ├── test_notecraft.py
+│   ├── test_notecraft_parse.py
 │   ├── test_notify.py
 │   ├── test_quiz_task.py
 │   ├── test_rag_callback.py
@@ -151,17 +164,24 @@ wiki/
 │   ├── test_stt_cli.py
 │   ├── test_stt_client.py
 │   ├── test_tasks.py
+│   ├── test_tasks_notebook_persist.py
 │   ├── test_transcribe_task.py
 │   ├── test_vault.py
 │   └── test_video_task.py
 ├── wiki/
+│   ├── aistudio-skills-analysis.md
+│   ├── e2e-video-1777208418.md
 │   ├── fleekhorse.md
 │   ├── olafsen-protocol.md
 │   └── zephyrplum.md
+├── AGENTS.md
 ├── CLAUDE.md
+├── GEMINI.md
 ├── README.md
+├── SOUL.md.example
+├── USER.md.example
+├── create_analysis_note.py
 ├── gateway.toml
-├── gemini.md
 ├── im.toml
 ├── imagen.toml
 ├── pyproject.toml
@@ -170,7 +190,7 @@ wiki/
 
 ## Do-Not-Break Guardrails
 
-- Do not `git push`: autopilot only commits locally; pushes are user-triggered.
+- Auto-push is opt-in via `<vault>/autopilot.toml` (`[push] enabled = true`); the safe default still only commits locally. Never `git push --force`; if you must rewrite, use `force-with-lease`.
 - Do not delete `.obsidian/`: it holds vault config (attachmentFolderPath, link format, etc.).
 - Do not bypass the watcher and write `wiki/` directly: it breaks the ingest pipeline and frontmatter state machine.
 - Do not hand-edit the `artifacts:` field outside of frontmatter: the watcher owns that field.
@@ -182,5 +202,5 @@ wiki/
 - Python: use `uv run`; bare `python`/`pip` is forbidden.
 - TypeScript: `any` is forbidden.
 - E2E: changes involving notecraft / NotebookLM must pass live calls ≥3 consecutive successes.
-- No push: `git_autopilot` only commits locally; pushing is triggered explicitly by the user.
+- Push is opt-in via `autopilot.toml`; default is local-commit-only. `--force` is forbidden; `force-with-lease` is the only allowed history-rewrite path.
 - Commit format: `<type>: <description>`; auto-generated artifacts use `[Auto] ...`.
