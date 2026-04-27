@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import subprocess
 import threading
 from pathlib import Path
@@ -8,7 +9,14 @@ from pathlib import Path
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from llmwiki.autopilot_config import AutopilotConfig
 from llmwiki.vault import Vault
+
+log = logging.getLogger(__name__)
+
+
+class PushFailed(Exception):
+    """Auto-push to the configured remote failed (auth/network/non-FF)."""
 
 _IGNORE_GLOBS = [
     ".git/*",
@@ -60,11 +68,18 @@ class _Handler(FileSystemEventHandler):
 
 
 class GitAutopilot:
-    def __init__(self, vault: Vault, debounce_seconds: float = 5.0) -> None:
+    def __init__(
+        self,
+        vault: Vault,
+        debounce_seconds: float = 5.0,
+        autopilot_cfg: AutopilotConfig | None = None,
+    ) -> None:
         self.vault = vault
         self._debounce = debounce_seconds
+        self._cfg = autopilot_cfg if autopilot_cfg is not None else AutopilotConfig()
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
+        self._push_timer: threading.Timer | None = None
         self._observer: Observer | None = None
         self._stop_event = threading.Event()
 
@@ -88,6 +103,9 @@ class GitAutopilot:
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
+            if self._push_timer is not None:
+                self._push_timer.cancel()
+                self._push_timer = None
         if self._observer is not None:
             self._observer.stop()
             self._observer.join(timeout=2)
@@ -107,7 +125,28 @@ class GitAutopilot:
         try:
             self._commit()
         except Exception:
-            pass
+            return
+        if not self._cfg.push_enabled:
+            return
+        delay = max(self._cfg.push_debounce_seconds, 0.0)
+        if delay <= 0:
+            self._safe_push()
+            return
+        with self._lock:
+            if self._push_timer is not None:
+                self._push_timer.cancel()
+            t = threading.Timer(delay, self._safe_push)
+            t.daemon = True
+            self._push_timer = t
+            t.start()
+
+    def _safe_push(self) -> None:
+        with self._lock:
+            self._push_timer = None
+        try:
+            self._push()
+        except PushFailed as exc:
+            log.warning("git_autopilot push failed: %s", exc)
 
     def _read_message(self) -> str:
         marker = self.vault.root / ".git-commit-msg"
