@@ -9,7 +9,6 @@ skill_files = glob.glob(os.path.join(skills_dir, "*/SKILL.md"))
 
 content = f"""---
 title: "AI Studio Skills Analysis"
-source: "local-aistudio-skills"
 created: {datetime.now(timezone.utc).astimezone().isoformat()}
 tags: [task/report]
 status: pending
