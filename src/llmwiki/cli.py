@@ -325,6 +325,28 @@ def _gateway_yaml_path(vault_root: Path) -> Path:
     return vault_root / ".llmwiki" / "litellm.generated.yaml"
 
 
+autopilot_app = typer.Typer(no_args_is_help=True, help="Git autopilot config")
+app.add_typer(autopilot_app, name="autopilot")
+
+
+@autopilot_app.command("init")
+def autopilot_init(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    from llmwiki.autopilot_config import CONFIG_FILENAME, write_default_template
+
+    root = _discover_vault_root(vault_path)
+    target, written = write_default_template(root)
+    if written:
+        console.print(f"[green]wrote[/green] {target.relative_to(root)}")
+        console.print(
+            "[dim]Edit autopilot.toml then enable [push]; auto-push uses git "
+            "credential helper — never commit tokens.[/dim]"
+        )
+    else:
+        console.print(f"[dim]{CONFIG_FILENAME} already exists, leaving untouched[/dim]")
+
+
 @gateway_app.command("init")
 def gateway_init(
     vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
