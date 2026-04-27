@@ -163,6 +163,28 @@ class GitAutopilot:
                 return msg
         return "[Auto] vault sync"
 
+    def _push(self) -> None:
+        """Push to the configured remote/branch. Raises PushFailed on any error.
+
+        Strategy:
+          - "fast-forward": plain `git push`. Fails on non-FF, refusing to
+            rewrite remote history — the safe default.
+          - "force-with-lease": adds `--force-with-lease`. Allows overwriting
+            the remote tip ONLY if the local view of the remote ref is current
+            (i.e. you've fetched since the last push). Never use plain `--force`.
+        """
+        root = str(self.vault.root)
+        argv = ["git", "push", self._cfg.push_remote]
+        if self._cfg.push_branch:
+            argv.append(self._cfg.push_branch)
+        if self._cfg.push_strategy == "force-with-lease":
+            argv.append("--force-with-lease")
+        try:
+            subprocess.run(argv, cwd=root, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "").strip()
+            raise PushFailed(stderr or f"git push exited with {exc.returncode}") from exc
+
     def _commit(self, message: str | None = None) -> None:
         msg = message if message is not None else self._read_message()
         root = str(self.vault.root)
