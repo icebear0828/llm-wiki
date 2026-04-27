@@ -104,7 +104,7 @@ def _ensure_installed() -> None:
 
 def _classify(stderr: str) -> type[NotecraftError]:
     s = stderr.lower()
-    if "no session available" in s or "audio download returned login page" in s:
+    if "no session available" in s or "audio download returned login page" in s or "session expired" in s:
         return SessionExpired
     if "rate limited" in s or "429" in s:
         return RateLimited
