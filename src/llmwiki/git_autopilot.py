@@ -174,9 +174,10 @@ class GitAutopilot:
             (i.e. you've fetched since the last push). Never use plain `--force`.
         """
         root = str(self.vault.root)
-        argv = ["git", "push", self._cfg.push_remote]
-        if self._cfg.push_branch:
-            argv.append(self._cfg.push_branch)
+        # Default to HEAD so push works regardless of upstream-tracking state;
+        # `git push <remote> HEAD` infers the destination from refs/heads.
+        branch = self._cfg.push_branch or "HEAD"
+        argv = ["git", "push", self._cfg.push_remote, branch]
         if self._cfg.push_strategy == "force-with-lease":
             argv.append("--force-with-lease")
         try:
