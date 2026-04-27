@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import frontmatter
@@ -36,6 +37,55 @@ class Vault:
         raise FileNotFoundError(
             f"No vault found from {cur}: need pyproject.toml + raw/ + wiki/"
         )
+
+
+@dataclass
+class NotebookIndex:
+    """Persisted `<vault>/.llmwiki/notebooks.json` mapping (key → notebook_id).
+
+    Lets all generation tasks share / reuse a stable NotebookLM workspace per
+    note instead of recreating one on every run.
+    """
+
+    vault: Vault
+    _data: dict[str, str] = field(default_factory=dict)
+    _loaded: bool = False
+
+    @property
+    def path(self) -> Path:
+        return self.vault.root / ".llmwiki" / "notebooks.json"
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded:
+            return
+        self._loaded = True
+        if not self.path.is_file():
+            return
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if isinstance(raw, dict):
+            self._data = {str(k): str(v) for k, v in raw.items() if isinstance(v, str)}
+
+    def get(self, key: str) -> str | None:
+        self._ensure_loaded()
+        return self._data.get(key)
+
+    def set(self, key: str, notebook_id: str) -> None:
+        self._ensure_loaded()
+        self._data[key] = notebook_id
+
+    def save(self) -> None:
+        self._ensure_loaded()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        payload = json.dumps(self._data, ensure_ascii=False, indent=2, sort_keys=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.path)
 
 
 class Note:
@@ -95,6 +145,14 @@ class Note:
             if (base / "pyproject.toml").is_file():
                 return base / p
         return self.path.parent / p
+
+    @property
+    def notebook_id(self) -> str | None:
+        value = self._post.metadata.get("notebook_id")
+        return str(value) if isinstance(value, str) and value else None
+
+    def set_notebook_id(self, notebook_id: str) -> None:
+        self._post.metadata["notebook_id"] = notebook_id
 
     @property
     def artifacts(self) -> dict[str, Path]:

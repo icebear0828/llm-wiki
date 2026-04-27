@@ -4,10 +4,34 @@ from pathlib import Path
 
 from llmwiki import notecraft
 from llmwiki.notecraft import NoteSource
+from llmwiki.vault import NotebookIndex, Vault
 
 from ._types import NoteLike
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def persist_notebook_id(note: NoteLike, notebook_id: str | None) -> None:
+    """Write notebook_id back to note frontmatter + vault NotebookIndex.
+
+    Called by every generation task after a notecraft run so subsequent runs
+    can reuse the same NotebookLM workspace (treat NotebookLM as a vault-level
+    RAG store). Note save is owned by the watcher; we only mutate `_post`.
+    """
+    if not notebook_id:
+        return
+    post = getattr(note, "_post", None)
+    if post is not None:
+        meta = getattr(post, "metadata", None)
+        if isinstance(meta, dict):
+            meta["notebook_id"] = notebook_id
+    try:
+        vault = Vault.discover(Path(note.path).parent)
+    except FileNotFoundError:
+        return
+    idx = NotebookIndex(vault)
+    idx.set(Path(note.path).stem, notebook_id)
+    idx.save()
 
 
 def source_from(note: NoteLike) -> NoteSource:

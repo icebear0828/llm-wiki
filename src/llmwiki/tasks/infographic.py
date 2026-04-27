@@ -4,7 +4,7 @@ from pathlib import Path
 
 from llmwiki import notecraft
 
-from ._common import out_dir_for, source_from
+from ._common import out_dir_for, persist_notebook_id, source_from
 from ._types import NoteLike
 
 _VALID_STYLES = {"sketch_note", "professional", "bento_grid"}
@@ -33,11 +33,15 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
             f"infographic_orientation must be one of {sorted(_VALID_ORIENTATIONS)}; got {orientation!r}"
         )
     out = out_dir_for("infographic")
-    artifact = notecraft.run(
+    result = notecraft.run(
         "infographic",
         source=source_from(note),
         out_dir=out,
         extra_args=["--style", style, "--orientation", orientation],
         timeout=3600.0,
+        return_full=True,
     )
-    return {"infographic": artifact}
+    assert isinstance(result, notecraft.RunResult)
+    persist_notebook_id(note, result.notebook_id)
+    assert result.artifact is not None
+    return {"infographic": result.artifact}

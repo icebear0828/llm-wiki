@@ -5,7 +5,7 @@ from typing import Protocol, cast
 
 from llmwiki import notecraft
 
-from ._common import out_dir_for, source_from
+from ._common import out_dir_for, persist_notebook_id, source_from
 from ._types import NoteLike
 
 
@@ -56,6 +56,7 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
     )
     assert isinstance(result, notecraft.RunResult)
     url = _parse_video_url(result.stdout)
+    persist_notebook_id(note, result.notebook_id)
 
     n = cast(_NoteWithPost, note)
     n._post.metadata["video_url"] = url

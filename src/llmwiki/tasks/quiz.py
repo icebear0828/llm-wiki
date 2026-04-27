@@ -4,7 +4,7 @@ from pathlib import Path
 
 from llmwiki import notecraft
 
-from ._common import out_dir_for, source_from
+from ._common import out_dir_for, persist_notebook_id, source_from
 from ._types import NoteLike
 
 
@@ -22,10 +22,14 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
     raw_difficulty = meta.get("quiz_difficulty", "medium")
     difficulty = str(raw_difficulty) if raw_difficulty is not None else "medium"
     out = out_dir_for("quiz")
-    artifact = notecraft.run(
+    result = notecraft.run(
         "quiz",
         source=source_from(note),
         out_dir=out,
         extra_args=["--difficulty", difficulty],
+        return_full=True,
     )
-    return {"quiz": artifact}
+    assert isinstance(result, notecraft.RunResult)
+    persist_notebook_id(note, result.notebook_id)
+    assert result.artifact is not None
+    return {"quiz": result.artifact}

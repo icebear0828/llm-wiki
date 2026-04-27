@@ -4,7 +4,7 @@ from pathlib import Path
 
 from llmwiki import notecraft
 
-from ._common import out_dir_for, source_from
+from ._common import out_dir_for, persist_notebook_id, source_from
 from ._types import NoteLike
 
 
@@ -26,10 +26,14 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
             "data-table requires data_table_instructions in frontmatter"
         )
     out = out_dir_for("data-table")
-    artifact = notecraft.run(
+    result = notecraft.run(
         "data-table",
         source=source_from(note),
         out_dir=out,
         extra_args=["--instructions", instructions],
+        return_full=True,
     )
-    return {"data-table": artifact}
+    assert isinstance(result, notecraft.RunResult)
+    persist_notebook_id(note, result.notebook_id)
+    assert result.artifact is not None
+    return {"data-table": result.artifact}

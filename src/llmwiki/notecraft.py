@@ -9,10 +9,25 @@ from __future__ import annotations
 
 import datetime as _dt
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+_NOTEBOOK_ID_RE = re.compile(
+    r"Notebook:\s*https?://notebooklm\.google\.com/notebook/([\w-]+)"
+)
+
+
+def parse_notebook_id(stderr: str) -> str | None:
+    """Extract NotebookLM workspace id from vendor CLI stderr.
+
+    vendor cli.ts emits `console.error(`Notebook: ${notebookUrl}`)` after
+    every generation command. Multiple matches return the last (most recent).
+    """
+    matches = _NOTEBOOK_ID_RE.findall(stderr or "")
+    return matches[-1] if matches else None
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _CLI_RELATIVE = Path("node_modules/notebooklm-client/dist/cli.js")
@@ -157,6 +172,7 @@ class RunResult:
     out_dir: Path
     stdout: str
     stderr: str
+    notebook_id: str | None = None
 
 
 def run(
@@ -230,5 +246,6 @@ def run(
             out_dir=out_dir,
             stdout=result.stdout or "",
             stderr=result.stderr or "",
+            notebook_id=parse_notebook_id(result.stderr or ""),
         )
     return artifact if artifact is not None else out_dir

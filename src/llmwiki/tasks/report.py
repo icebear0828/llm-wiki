@@ -4,17 +4,21 @@ from pathlib import Path
 
 from llmwiki import notecraft
 
-from ._common import out_dir_for, source_from
+from ._common import out_dir_for, persist_notebook_id, source_from
 from ._types import NoteLike
 
 
 def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
     out = out_dir_for("report")
-    artifact = notecraft.run(
+    result = notecraft.run(
         "report",
         source=source_from(note),
         out_dir=out,
         extra_args=["--template", "study_guide"],
         timeout=1200.0,
+        return_full=True,
     )
-    return {"report": artifact}
+    assert isinstance(result, notecraft.RunResult)
+    persist_notebook_id(note, result.notebook_id)
+    assert result.artifact is not None
+    return {"report": result.artifact}

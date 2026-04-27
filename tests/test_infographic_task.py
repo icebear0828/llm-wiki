@@ -27,12 +27,22 @@ def _patch_run(
         timeout=600.0,
         subcommand=None,
         expect_artifact=True,
+        return_full=False,
+        pass_output_dir=None,
     ):
         captured["cmd"] = cmd
         captured["source"] = source
         captured["out_dir"] = out_dir
         captured["extra_args"] = list(extra_args or [])
-        return out_dir / "infographic.png"
+        artifact = out_dir / "infographic.png"
+        if return_full:
+            return notecraft.RunResult(
+                artifact=artifact,
+                out_dir=out_dir,
+                stdout="",
+                stderr="",
+            )
+        return artifact
 
     monkeypatch.setattr(notecraft, "run", fake)
     monkeypatch.setattr(infographic.notecraft, "run", fake, raising=True)
