@@ -6,6 +6,20 @@
 - **Compiler**：底层大模型 + 自治 Agent
 - **Executable**：Obsidian 承载的 Markdown 双向链接网络
 
+## Quickstart
+
+完整安装、配置、凭据、API key、自动 push 一站式指南：**[docs/SETUP.md](docs/SETUP.md)**
+
+最短路径（详见 SETUP）：
+```bash
+uv sync
+git -c protocol.file.allow=always submodule update --init --recursive
+(cd vendor/notebooklm && npm i && npm run build) && npm i ./vendor/notebooklm --no-save
+uv run wikictl gateway init && uv run wikictl im init && uv run wikictl imagen init && uv run wikictl stt init && uv run wikictl autopilot init
+npx notebooklm export-session
+uv run wikictl daemon
+```
+
 ## 架构
 
 ```
@@ -14,123 +28,24 @@ wiki/   结构知识区（Markdown + 双向链接）
 assets/ 多模态产物（音/视频/PPT/抽认卡）
 ```
 
-Vault 根 = 项目根 = git 仓库。后台守护进程扫 frontmatter 的 `task/*` 标签，自动调 [notecraft](https://github.com/) (vendor/notebooklm) 生成播客 / 报告 / 幻灯片 / 视频 / 抽认卡，落盘后自动 git commit。
+Vault 根 = 项目根 = git 仓库。后台守护进程扫 frontmatter 的 `task/*` 标签，自动调 [notecraft](vendor/notebooklm/) 生成播客 / 报告 / 幻灯片 / 视频 / 抽认卡，落盘后自动 git commit；按需走 `autopilot.toml` 推到私仓。
+
+## 子系统一览
+
+每个子系统都有独立 init / start / 配置文件，详细字段、env var、凭据见 [docs/SETUP.md](docs/SETUP.md)。
+
+| 子系统 | 文件 | 作用 |
+|--------|------|------|
+| **Gateway** | `gateway.toml` | LiteLLM proxy，统一暴露 OpenAI/Anthropic/Gemini 三家协议入口（端口 8080） |
+| **IM** | `im.toml` | Telegram bot + HTTP `/ingest`（8081）→ `raw/`；斜杠命令注入 `task/*` 标签 |
+| **Imagen** | `imagen.toml` | `task/gen-image` 反向生图；OpenAI / Gemini 两种 backend |
+| **STT** | `stt.toml` | Whisper 转录；语音消息走 `task/transcribe` 落到 `wiki/` |
+| **Notecraft** | (vendor) | NotebookLM 自动化；workspace id 持久化进 `<vault>/.llmwiki/notebooks.json`，跨任务复用 |
+| **Autopilot** | `autopilot.toml` | 5s debounce → `[Auto] commit`；可选自动 push 到私仓（默认关） |
 
 ## 状态
 
-MVP 闭环开发中，进度见 [Issues](../../issues) 与 [MVP closed loop](../../milestone/1) milestone。
-
-完整 PRD 与延后子系统见 epic issue **PRD v2.0 全景**。
-
-## Gateway (LiteLLM)
-
-本地启一个 LiteLLM proxy，同时暴露三家协议入口，转发到用户配置的反代 base URL。给 Chatbox / Claude Code / Gemini CLI 一个统一接入点。
-
-```
-http://localhost:8080/v1/chat/completions                       # OpenAI
-http://localhost:8080/v1/messages                               # Anthropic
-http://localhost:8080/v1beta/models/<model>:generateContent     # Gemini
-```
-
-```bash
-uv run wikictl gateway init       # 写 <vault>/gateway.toml 模板
-uv run wikictl gateway start      # 起 LiteLLM proxy
-uv run wikictl gateway status     # /health 检查
-uv run wikictl gateway config     # 打印三家客户端环境变量
-```
-
-完整子命令见 `uv run wikictl gateway --help`。
-
-## IM gateway
-
-外部消息（HTTP webhook、Telegram bot、未来的 Discord/飞书等）经一条共享 ingest 管道落到 `raw/`，被 `wikictl daemon` 接管并按 `task/*` 标签触发 Notecraft 生成。
-
-```bash
-uv run wikictl im init           # 写 <vault>/im.toml 模板
-uv run wikictl im http           # 只起 HTTP /ingest（端口 8081）
-uv run wikictl im telegram       # 只起 Telegram polling
-uv run wikictl im start          # 同进程并发起 HTTP + Telegram
-```
-
-### HTTP `/ingest`
-
-```bash
-# 文本
-curl -X POST http://localhost:8081/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"kind":"text","payload":"笔记内容","tags":["task/report"]}'
-
-# URL（trafilatura 自动抓正文转 markdown）
-curl -X POST http://localhost:8081/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"kind":"url","payload":"https://en.wikipedia.org/wiki/HTTPS"}'
-
-# 文件上传
-curl -X POST http://localhost:8081/ingest/file \
-  -F "file=@paper.pdf" -F "tags=task/report"
-```
-
-可选鉴权：在 `im.toml` 设 `http_token = "<秘密>"`，请求加 `X-Llmwiki-Token: <秘密>`。
-
-### Telegram bot
-
-1. BotFather 建 bot 拿 token
-2. `LLMWIKI_TG_TOKEN=<token> uv run wikictl im start`
-3. 给 bot 发：纯文本 / URL / 文档 / 图片 / 语音都会落到 `raw/`
-4. 斜杠命令注入 task 标签：`/audio <text>`、`/report <url>`、`/slides`、`/video`、`/flashcards`
-5. 默认全开（不限白名单）；要锁就在 `im.toml` 的 `[telegram] allowed_user_ids = [123456]` 填你的 chat id
-
-完整子命令见 `uv run wikictl im --help`。
-
-## STT (Whisper)
-
-设备 A (192.168.10.2:8000) 跑 `mlx-whisper-large-v3` (FastAPI + MLX)，launchd 自启。Telegram 语音消息默认带 `task/transcribe` 标签 → daemon 检测 → 调 A 转录 → 笔记落 `wiki/`，body 顶部嵌入转录正文，segments JSON 存 `assets/transcripts/`。
-
-```bash
-uv run wikictl stt init                  # 写 <vault>/stt.toml 模板
-uv run wikictl stt transcribe foo.mp3    # 一次性转录单文件
-```
-
-支持中/英/日/韩等多语言 auto-detect；frontmatter 自动写入 `language` + `duration_seconds`。
-
-完整子命令见 `uv run wikictl stt --help`。
-
-## Notifications
-
-daemon 在某些异常时直接给你的 Telegram 推送（不需要再去 vault 翻 `assets/ALERT-*.md`）。
-
-配置：在 `im.toml` 的 `[telegram]` 段填 `notify_chat_id`（int）：
-
-```toml
-[telegram]
-bot_token = "..."         # 或 env LLMWIKI_TG_TOKEN
-notify_chat_id = 12345    # 你的 chat_id
-```
-
-拿 `chat_id`：先给 bot 发任意一条消息，然后浏览器访问
-`https://api.telegram.org/bot<TOKEN>/getUpdates`，`result[0].message.chat.id` 就是。
-
-去抖：每个 `throttle_key` 默认 1 小时窗口内只推一次，状态记在
-`<vault>/.llmwiki/notify-state.json`。
-
-当前会触发推送的事件：
-
-- `SessionExpired` —— NotebookLM session 失效，需要 `npx notebooklm export-session`
-
-## Reverse generation (`#task/gen-image`)
-
-笔记 frontmatter 加 `image_prompt: "..."` + tag `task/gen-image` → daemon 调上游图像模型 → 落到 `assets/images/<UTC-ts>-<n>.{png|jpg}` → 笔记顶部插入 `![[...]]`。
-
-支持 OpenAI 风格 (`/v1/images/generations`) 和 Gemini 原生 (`/v1beta/.../generateContent`) 两种 backend，由 `imagen.toml` 的 `backend = "gemini" | "openai"` 切换。
-
-```bash
-uv run wikictl imagen init              # 写 <vault>/imagen.toml 模板
-uv run wikictl imagen generate "a cat"  # 一次性生图（不入 vault）
-```
-
-`image_prompt` 可以是单字符串或字符串数组（一篇笔记多张图）。
-
-完整子命令见 `uv run wikictl imagen --help`。
+MVP 闭环开发中，进度见 [Issues](../../issues) 与 [MVP closed loop](../../milestone/1) milestone。完整 PRD 与延后子系统见 epic issue **PRD v2.0 全景**。
 
 ## wikicraft (Claude Code skill)
 
