@@ -17,6 +17,7 @@ from llmwiki.tasks import (
     source_add,
     transcribe,
     video,
+    youtube,
 )
 from llmwiki.tasks._types import NoteLike
 
@@ -36,6 +37,7 @@ TASK_REGISTRY: dict[str, TaskFn] = {
     "data-table": data_table.run,
     "chat": chat.run,
     "arxiv": arxiv.run,
+    "youtube": youtube.run,
 }
 
 __all__ = ["TASK_REGISTRY", "TaskFn", "NoteLike"]

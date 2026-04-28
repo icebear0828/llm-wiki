@@ -814,6 +814,69 @@ def arxiv_add(
             console.print(f"[green]✓ ingested arxiv:{arxiv_id}[/green] → {pdf}")
 
 
+youtube_app = typer.Typer(no_args_is_help=True, help="Ingest YouTube videos (id or URL)")
+app.add_typer(youtube_app, name="youtube")
+
+
+@youtube_app.command("add")
+def youtube_add(
+    id_or_url: str = typer.Argument(..., help="YouTube id or URL (watch / youtu.be / shorts / embed)"),
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    import frontmatter as _frontmatter
+
+    from llmwiki import notecraft as _nc
+    from llmwiki.tasks import youtube as _youtube
+    from llmwiki.vault import Note
+
+    root = _discover_vault_root(vault_path)
+    raw_dir = root / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        video_id = _youtube._parse_video_id(id_or_url)
+    except _nc.NotecraftError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    note_path = raw_dir / f"youtube-{video_id}.md"
+    # NOTE: do NOT add `task/youtube` to tags — the CLI runs the ingest
+    # synchronously below. Adding the tag would cause a daemon watcher (if
+    # running) to dispatch the same task in parallel, racing on frontmatter.
+    if not note_path.exists():
+        post = _frontmatter.Post(
+            "",
+            title=f"youtube:{video_id}",
+            youtube_id=video_id,
+            tags=[],
+            status="pending",
+        )
+        body = _frontmatter.dumps(post)
+        if not body.endswith("\n"):
+            body += "\n"
+        note_path.write_text(body, encoding="utf-8")
+        console.print(f"[dim]created[/dim] {note_path.relative_to(root)}")
+
+    note = Note(note_path)
+    try:
+        result = _youtube.run(note, arg=id_or_url)
+    except _nc.NotecraftError as exc:
+        console.print(f"[red]youtube ingest failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    note.set_status("done")
+    note.save()
+
+    transcript = result.get("youtube_transcript")
+    if transcript is not None:
+        try:
+            console.print(f"[green]✓ ingested youtube:{video_id}[/green] → {transcript.relative_to(root)}")
+        except ValueError:
+            console.print(f"[green]✓ ingested youtube:{video_id}[/green] → {transcript}")
+    else:
+        console.print(f"[green]✓ ingested youtube:{video_id}[/green] (oembed only — no captions available)")
+
+
 notecraft_app = typer.Typer(no_args_is_help=True, help="NotebookLM automations and workspace management")
 app.add_typer(notecraft_app, name="notecraft")
 

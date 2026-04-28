@@ -60,6 +60,7 @@ def test_registry_keys() -> None:
         "data-table",
         "chat",
         "arxiv",
+        "youtube",
     }
 
 

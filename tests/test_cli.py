@@ -258,3 +258,77 @@ def test_arxiv_add_invalid_id_exits_nonzero(tmp_path: Path) -> None:
         app, ["arxiv", "add", "not-arxiv-at-all", "--vault", str(tmp_path)]
     )
     assert result.exit_code != 0
+
+
+def test_youtube_add_creates_stub_and_runs_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json as _json
+
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+
+    from llmwiki.tasks import youtube as youtube_mod
+
+    sample_oembed = _json.dumps(
+        {
+            "title": "CLI YouTube Test",
+            "author_name": "Sample Channel",
+            "thumbnail_url": "https://i.ytimg.com/vi/tj8ggd8UvB0/hqdefault.jpg",
+        }
+    )
+
+    class _R:
+        def __init__(self, *, text: str = "") -> None:
+            self.status_code = 200
+            self.text = text
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        youtube_mod, "_http_get", lambda url, *, timeout=10.0: _R(text=sample_oembed)
+    )
+
+    class _Snip:
+        def __init__(self, t: str) -> None:
+            self.text = t
+
+    class _Fetched:
+        def __iter__(self):
+            return iter([_Snip("hello"), _Snip("world")])
+
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    monkeypatch.setattr(
+        YouTubeTranscriptApi,
+        "fetch",
+        lambda self, video_id, languages=None, **kwargs: _Fetched(),
+        raising=True,
+    )
+
+    result = runner.invoke(
+        app,
+        ["youtube", "add", "https://www.youtube.com/watch?v=tj8ggd8UvB0", "--vault", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
+
+    note_path = tmp_path / "raw" / "youtube-tj8ggd8UvB0.md"
+    transcript = tmp_path / "assets" / "youtube" / "tj8ggd8UvB0.txt"
+    assert note_path.is_file()
+    assert transcript.is_file()
+    assert transcript.read_text(encoding="utf-8") == "hello\nworld"
+
+    post = frontmatter.load(str(note_path))
+    assert post.metadata["youtube_id"] == "tj8ggd8UvB0"
+    assert post.metadata["title"] == "CLI YouTube Test"
+    assert post.metadata["youtube_author"] == "Sample Channel"
+    assert post.metadata["source_file"] == "assets/youtube/tj8ggd8UvB0.txt"
+    assert post.metadata["status"] == "done"
+
+
+def test_youtube_add_invalid_url_exits_nonzero(tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    result = runner.invoke(
+        app, ["youtube", "add", "not-a-youtube-url", "--vault", str(tmp_path)]
+    )
+    assert result.exit_code != 0
