@@ -30,7 +30,10 @@ Derived from farzaa's personal-wiki-skill (gist `c35ac0cfbeb957788650e36aabea836
    - Named entity appearing for the first time with sufficient material (≥3 meaningful sentences): create a new article
    - Named entity appearing for the first time but only a passing mention: keep it inline in the existing article
    - Topic/pattern recurring across multiple notes: create a conceptual article (philosophies/, patterns/, tensions/)
-4. After editing a wiki article, add the raw note ID to the frontmatter `sources:` field; update `last_updated`
+4. After editing a wiki article:
+   - Add the raw note ID as a **wikilink** in the `sources:` frontmatter (e.g. `sources: ["[[arxiv-2401.12345]]"]`) — bare strings produce no Obsidian graph edge.
+   - Include at least one inline `[[<raw-note-id>]]` reference in the article body (e.g. a closing "## Source" line citing `[[arxiv-2401.12345]]`). Required so the graph edge from wiki article → raw stub is rendered even when readers ignore frontmatter.
+   - Update `last_updated`.
 5. **Keep** the raw note (do not unlink) — it is the source of truth; the ingest pipeline handles decisions about moving to wiki/
 
 **Anti-cramming**: If you're about to add a third same-topic paragraph to an existing article, **create a new article instead**.
@@ -145,6 +148,7 @@ sources: ["<raw-note-id-1>", "<raw-note-id-2>"]
 4. **No need to manually commit after editing wiki articles**: The `git_autopilot` daemon handles commits automatically.
 5. **Plan before major changes**: When cleanup / breakdown involves moving/reorganizing multiple files, align with the user first via ExitPlanMode workflow.
 6. **Obsidian `[[shortest]]` link format**: `.obsidian/app.json` has `newLinkFormat: shortest`; write links as `[[Title]]` not `[[wiki/path/to/Title]]`.
+7. **Aliases when title ≠ filename**: Obsidian resolves `[[X]]` to a file named `X.md` OR a file whose `aliases:` frontmatter contains `X`. When the article's `title:` differs from its filename slug (e.g. Chinese title with English slug, or any rename), add `aliases: [<title>]` to frontmatter. Without this the `[[<title>]]` links from other articles render as unresolved (orange) graph nodes.
 
 ## Do Not
 
