@@ -761,6 +761,8 @@ def arxiv_add(
     id_or_url: str = typer.Argument(..., help="arxiv id (2401.12345) or URL"),
     vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
 ) -> None:
+    import frontmatter as _frontmatter
+
     from llmwiki import notecraft as _nc
     from llmwiki.tasks import arxiv as _arxiv
     from llmwiki.vault import Note
@@ -777,19 +779,32 @@ def arxiv_add(
 
     safe_id = arxiv_id.replace("/", "_")
     note_path = raw_dir / f"arxiv-{safe_id}.md"
+    # NOTE: do NOT add `task/arxiv` to tags — the CLI runs the ingest
+    # synchronously below. Adding the tag would cause a daemon watcher (if
+    # running) to dispatch the same task in parallel, racing on frontmatter.
     if not note_path.exists():
-        note_path.write_text(
-            f"---\ntitle: 'arxiv:{arxiv_id}'\narxiv_id: '{arxiv_id}'\n"
-            f"tags: [task/arxiv]\nstatus: pending\n---\n",
-            encoding="utf-8",
+        post = _frontmatter.Post(
+            "",
+            title=f"arxiv:{arxiv_id}",
+            arxiv_id=arxiv_id,
+            tags=[],
+            status="pending",
         )
+        body = _frontmatter.dumps(post)
+        if not body.endswith("\n"):
+            body += "\n"
+        note_path.write_text(body, encoding="utf-8")
         console.print(f"[dim]created[/dim] {note_path.relative_to(root)}")
 
+    note = Note(note_path)
     try:
-        result = _arxiv.run(Note(note_path), arg=id_or_url)
+        result = _arxiv.run(note, arg=id_or_url)
     except _nc.NotecraftError as exc:
         console.print(f"[red]arxiv ingest failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
+
+    note.set_status("done")
+    note.save()
 
     pdf = result.get("arxiv_pdf")
     if pdf is not None:

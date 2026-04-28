@@ -50,3 +50,13 @@ def test_language_from_non_string_falls_back(tmp_path: Path) -> None:
 def test_language_from_strips_whitespace(tmp_path: Path) -> None:
     note = _make_note(tmp_path, "title: T\nlanguage: '  fr  '\n")
     assert language_from(note) == "fr"
+
+
+def test_language_from_empty_language_falls_through_to_lang(tmp_path: Path) -> None:
+    note = _make_note(tmp_path, "title: T\nlanguage: ''\nlang: zh\n")
+    assert language_from(note) == "zh"
+
+
+def test_language_from_blank_language_falls_through_to_lang(tmp_path: Path) -> None:
+    note = _make_note(tmp_path, "title: T\nlanguage: '   '\nlang: ja\n")
+    assert language_from(note) == "ja"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,12 +12,16 @@ import httpx
 
 from llmwiki import notecraft
 
-from ._common import REPO_ROOT
 from ._types import NoteLike
 
 
+# Anchored: id must start at string-start or after whitespace / `:` / `/` / `(`
+# (so `arxiv:`, URL paths, and bare ids work, but `random-2401.12345-string`
+# fails). Trailing `(?!\d)` rejects 6+ digit suffixes like `2401.123456`.
 _ID_PATTERN = re.compile(
-    r"(?P<id>\d{4}\.\d{4,5}(?:v\d+)?|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})",
+    r"(?:^|(?<=[\s:/(]))"
+    r"(?P<id>\d{4}\.\d{4,5}(?:v\d+)?|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})"
+    r"(?!\d)",
     re.IGNORECASE,
 )
 _VERSION_RE = re.compile(r"v\d+$")
@@ -85,21 +91,19 @@ def _resolve_arxiv_id(note: NoteLike, arg: str | None) -> str:
 
 def _http_get(url: str, *, timeout: float = 10.0) -> httpx.Response:
     with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        resp = client.get(url)
-    resp.raise_for_status()
-    return resp
+        return client.get(url)
 
 
 def _http_get_bytes(url: str, *, timeout: float = 60.0) -> httpx.Response:
     with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        resp = client.get(url)
-    resp.raise_for_status()
-    return resp
+        return client.get(url)
 
 
-def _assets_arxiv_dir(vault_root: Path | None = None) -> Path:
-    base = vault_root if vault_root is not None else REPO_ROOT
-    d = base / "assets" / "arxiv"
+_RETRYABLE_STATUS = {429, 502, 503, 504}
+
+
+def _assets_arxiv_dir(vault_root: Path) -> Path:
+    d = vault_root / "assets" / "arxiv"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -110,12 +114,27 @@ def _normalize_whitespace(text: str) -> str:
 
 def _fetch_metadata(arxiv_id: str) -> _Meta:
     url = f"{_API_URL}?id_list={_strip_version(arxiv_id)}"
-    try:
-        resp = _http_get(url)
-    except (httpx.HTTPError, RuntimeError) as exc:
-        raise notecraft.NotecraftError(f"arxiv api fetch failed: {exc}") from exc
-    if getattr(resp, "status_code", 200) >= 400:
-        raise notecraft.NotecraftError(f"arxiv api returned {resp.status_code}")
+    last_status: int | None = None
+    last_err: Exception | None = None
+    resp: httpx.Response | None = None
+    for attempt in range(2):
+        try:
+            resp = _http_get(url)
+        except httpx.HTTPError as exc:
+            last_err = exc
+            if attempt == 0:
+                time.sleep(0.5)
+                continue
+            raise notecraft.NotecraftError(f"arxiv api fetch failed: {exc}") from exc
+        last_status = getattr(resp, "status_code", 200)
+        if last_status in _RETRYABLE_STATUS and attempt == 0:
+            time.sleep(0.5)
+            continue
+        break
+    if resp is None:
+        raise notecraft.NotecraftError(f"arxiv api fetch failed: {last_err}")
+    if last_status is not None and last_status >= 400:
+        raise notecraft.NotecraftError(f"arxiv api returned {last_status}")
     try:
         root = ET.fromstring(resp.text)
     except ET.ParseError as exc:
@@ -138,19 +157,25 @@ def _id_to_filename(arxiv_id: str) -> str:
     return arxiv_id.replace("/", "_") + ".pdf"
 
 
-def _download_pdf(arxiv_id: str, vault_root: Path | None = None) -> Path:
+def _is_pdf_bytes(content: bytes) -> bool:
+    return content[:5] == b"%PDF-"
+
+
+def _download_pdf(arxiv_id: str, vault_root: Path) -> Path:
     out_dir = _assets_arxiv_dir(vault_root)
     out_path = out_dir / _id_to_filename(arxiv_id)
-    if out_path.exists() and out_path.stat().st_size > 0:
+    if out_path.exists() and out_path.stat().st_size > 0 and _is_pdf_bytes(out_path.read_bytes()[:5]):
         return out_path
     url = _PDF_URL.format(id=arxiv_id)
     try:
         resp = _http_get_bytes(url)
-    except (httpx.HTTPError, RuntimeError) as exc:
+    except httpx.HTTPError as exc:
         raise notecraft.NotecraftError(f"arxiv pdf download failed: {exc}") from exc
     if getattr(resp, "status_code", 200) >= 400:
         raise notecraft.NotecraftError(f"arxiv pdf download returned {resp.status_code}")
-    out_path.write_bytes(resp.content)
+    tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+    tmp_path.write_bytes(resp.content)
+    os.replace(tmp_path, out_path)
     return out_path
 
 
@@ -172,7 +197,16 @@ def _writeback(
     md = n._post.metadata
     md["arxiv_id"] = arxiv_id
     md["source"] = _ABS_URL.format(id=arxiv_id)
-    md["title"] = meta.title or md.get("title") or arxiv_id
+    # Preserve user-set title; only fill stub forms (`arxiv:<id>` / empty / equal to id).
+    existing_title = md.get("title")
+    stub_marker = f"arxiv:{arxiv_id}"
+    is_stub = (
+        not isinstance(existing_title, str)
+        or not existing_title.strip()
+        or existing_title.strip() in (stub_marker, arxiv_id)
+    )
+    if is_stub:
+        md["title"] = meta.title or arxiv_id
     if meta.authors:
         md["arxiv_authors"] = list(meta.authors)
     if meta.published:

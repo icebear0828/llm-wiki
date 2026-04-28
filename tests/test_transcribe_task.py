@@ -198,3 +198,29 @@ def test_transcribe_header_localized_by_detected_language(
     transcribe.run(Note(note_path))
     reloaded = Note(note_path)
     assert expected_prefix in reloaded.body
+
+
+def test_transcribe_frontmatter_language_overrides_detected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """User-set frontmatter `language: zh` wins over Whisper's `en` detection."""
+    vault = _make_vault(tmp_path)
+    audio = vault / "raw" / "x.wav"
+    audio.write_bytes(b"a")
+    note_path = vault / "raw" / "x.md"
+    note_path.write_text(
+        "---\n"
+        "title: x\n"
+        "language: zh\n"
+        "source_file: raw/x.wav\n"
+        "tags: [task/transcribe]\n"
+        "---\n"
+        "![[raw/x.wav]]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(transcribe, "WhisperClient", _fake_transcribe(text="t", lang="en"))
+    transcribe.run(Note(note_path))
+    reloaded = Note(note_path)
+    # frontmatter zh wins over whisper-detected en
+    assert "## 转录" in reloaded.body
+    assert "## Transcription" not in reloaded.body
