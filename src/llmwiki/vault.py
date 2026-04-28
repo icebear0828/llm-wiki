@@ -155,11 +155,18 @@ class Note:
         self._post.metadata["notebook_id"] = notebook_id
 
     @property
-    def artifacts(self) -> dict[str, Path]:
+    def artifacts(self) -> dict[str, str | Path]:
         raw = self._post.metadata.get("artifacts") or {}
         if not isinstance(raw, dict):
             return {}
-        return {str(k): Path(str(v)) for k, v in raw.items()}
+        result: dict[str, str | Path] = {}
+        for k, v in raw.items():
+            s = str(v)
+            if s.startswith("http://") or s.startswith("https://"):
+                result[str(k)] = s
+            else:
+                result[str(k)] = Path(s)
+        return result
 
     @property
     def body(self) -> str:
@@ -184,14 +191,20 @@ class Note:
                 return base
         return self.path.parent
 
-    def add_artifact(self, name: str, path: Path) -> None:
-        root = self._vault_root()
-        try:
-            rel = path.resolve().relative_to(root.resolve())
-        except ValueError:
-            rel = path
+    def add_artifact(self, name: str, value: str | Path) -> None:
+        if isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")):
+            rel_str = value
+        else:
+            path = Path(value) if isinstance(value, str) else value
+            root = self._vault_root()
+            try:
+                rel = path.resolve().relative_to(root.resolve())
+            except ValueError:
+                rel = path
+            rel_str = str(rel)
+            
         existing = self.artifacts
-        existing[name] = Path(str(rel))
+        existing[name] = rel_str  # type: ignore
         self._post.metadata["artifacts"] = {k: str(v) for k, v in existing.items()}
 
     def prepend_body(self, text: str) -> None:
