@@ -201,3 +201,60 @@ def test_run_task_calls_process_note(
     assert result.exit_code == 0, result.output
     fake_note_cls.assert_called_once()
     fake_watcher_instance._process_note.assert_called_once_with(fake_note_instance)
+
+
+def test_arxiv_add_creates_stub_and_runs_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+
+    from llmwiki.tasks import arxiv as arxiv_mod
+
+    sample_atom = (
+        '<?xml version="1.0"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">'
+        "<entry>"
+        "<id>http://arxiv.org/abs/2401.12345</id>"
+        "<title>CLI Test Paper</title>"
+        "<summary>An abstract.</summary>"
+        "<published>2026-02-01T00:00:00Z</published>"
+        "<author><name>Eve</name></author>"
+        "</entry></feed>"
+    )
+
+    class _R:
+        def __init__(self, *, text: str = "", content: bytes = b"") -> None:
+            self.status_code = 200
+            self.text = text
+            self.content = content
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr(arxiv_mod, "_http_get", lambda url, *, timeout=10.0: _R(text=sample_atom))
+    monkeypatch.setattr(arxiv_mod, "_http_get_bytes", lambda url, *, timeout=60.0: _R(content=b"%PDF"))
+
+    result = runner.invoke(
+        app,
+        ["arxiv", "add", "https://arxiv.org/abs/2401.12345", "--vault", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
+
+    note_path = tmp_path / "raw" / "arxiv-2401.12345.md"
+    pdf_path = tmp_path / "assets" / "arxiv" / "2401.12345.pdf"
+    assert note_path.is_file()
+    assert pdf_path.is_file()
+
+    post = frontmatter.load(str(note_path))
+    assert post.metadata["arxiv_id"] == "2401.12345"
+    assert post.metadata["title"] == "CLI Test Paper"
+    assert post.metadata["source_file"] == "assets/arxiv/2401.12345.pdf"
+    assert post.metadata["arxiv_authors"] == ["Eve"]
+
+
+def test_arxiv_add_invalid_id_exits_nonzero(tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    result = runner.invoke(
+        app, ["arxiv", "add", "not-arxiv-at-all", "--vault", str(tmp_path)]
+    )
+    assert result.exit_code != 0

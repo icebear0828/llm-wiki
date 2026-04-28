@@ -59,15 +59,34 @@ def test_registry_keys() -> None:
         "infographic",
         "data-table",
         "chat",
+        "arxiv",
     }
 
 
 @pytest.mark.parametrize(
     "name,expected_cmd,expected_extra,expected_subdir,artifact_key",
     [
-        ("audio", "audio", ["--format", "debate", "--length", "short"], "audio", "audio"),
-        ("report", "report", ["--template", "study_guide"], "report", "report"),
-        ("slides", "slides", ["--format", "presenter"], "slides", "slides"),
+        (
+            "audio",
+            "audio",
+            ["--format", "debate", "--length", "short", "--language", "en"],
+            "audio",
+            "audio",
+        ),
+        (
+            "report",
+            "report",
+            ["--template", "study_guide", "--language", "en"],
+            "report",
+            "report",
+        ),
+        (
+            "slides",
+            "slides",
+            ["--format", "presenter", "--language", "en"],
+            "slides",
+            "slides",
+        ),
         (
             "flashcards",
             "flashcards",
@@ -127,3 +146,37 @@ def test_source_falls_back_to_text(
     note.path.write_text("hello world")
     report.run(note)
     assert captured["source"].text == "hello world"
+
+
+@pytest.mark.parametrize(
+    "task_module,task_name",
+    [
+        (audio, "audio"),
+        (report, "report"),
+        (slides, "slides"),
+    ],
+)
+def test_task_language_override_from_frontmatter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    task_module: object,
+    task_name: str,
+) -> None:
+    from llmwiki.vault import Note
+
+    captured: dict[str, object] = {}
+    _patch(monkeypatch, captured)
+    p = tmp_path / "n.md"
+    p.write_text(
+        "---\n"
+        "title: T\n"
+        "language: zh\n"
+        "source: https://example.com/x\n"
+        "---\nbody\n",
+        encoding="utf-8",
+    )
+    task_module.run(Note(p))  # type: ignore[attr-defined]
+    extra = captured["extra_args"]
+    assert isinstance(extra, list)
+    assert "--language" in extra
+    assert extra[extra.index("--language") + 1] == "zh"

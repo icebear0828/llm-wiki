@@ -4,7 +4,13 @@ from pathlib import Path
 
 from llmwiki import notecraft
 
-from ._common import lookup_notebook_id, out_dir_for, persist_notebook_id, source_from
+from ._common import (
+    language_from,
+    lookup_notebook_id,
+    out_dir_for,
+    persist_notebook_id,
+    source_from,
+)
 from ._types import NoteLike
 
 
@@ -14,7 +20,10 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
         "slides",
         source=source_from(note),
         out_dir=out,
-        extra_args=["--format", "presenter"],
+        extra_args=[
+            "--format", "presenter",
+            "--language", language_from(note),
+        ],
         timeout=3600.0,
         return_full=True,
         notebook_id=lookup_notebook_id(note),

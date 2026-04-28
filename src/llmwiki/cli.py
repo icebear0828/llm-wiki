@@ -752,6 +752,53 @@ def imagen_generate(
             console.print(f"[green]saved[/green] {p}")
 
 
+arxiv_app = typer.Typer(no_args_is_help=True, help="Ingest arxiv papers (id or URL)")
+app.add_typer(arxiv_app, name="arxiv")
+
+
+@arxiv_app.command("add")
+def arxiv_add(
+    id_or_url: str = typer.Argument(..., help="arxiv id (2401.12345) or URL"),
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+) -> None:
+    from llmwiki import notecraft as _nc
+    from llmwiki.tasks import arxiv as _arxiv
+    from llmwiki.vault import Note
+
+    root = _discover_vault_root(vault_path)
+    raw_dir = root / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        arxiv_id = _arxiv._parse_arxiv_id(id_or_url)
+    except _nc.NotecraftError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    safe_id = arxiv_id.replace("/", "_")
+    note_path = raw_dir / f"arxiv-{safe_id}.md"
+    if not note_path.exists():
+        note_path.write_text(
+            f"---\ntitle: 'arxiv:{arxiv_id}'\narxiv_id: '{arxiv_id}'\n"
+            f"tags: [task/arxiv]\nstatus: pending\n---\n",
+            encoding="utf-8",
+        )
+        console.print(f"[dim]created[/dim] {note_path.relative_to(root)}")
+
+    try:
+        result = _arxiv.run(Note(note_path), arg=id_or_url)
+    except _nc.NotecraftError as exc:
+        console.print(f"[red]arxiv ingest failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    pdf = result.get("arxiv_pdf")
+    if pdf is not None:
+        try:
+            console.print(f"[green]✓ ingested arxiv:{arxiv_id}[/green] → {pdf.relative_to(root)}")
+        except ValueError:
+            console.print(f"[green]✓ ingested arxiv:{arxiv_id}[/green] → {pdf}")
+
+
 notecraft_app = typer.Typer(no_args_is_help=True, help="NotebookLM automations and workspace management")
 app.add_typer(notecraft_app, name="notecraft")
 

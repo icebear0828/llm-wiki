@@ -78,6 +78,26 @@ def test_video_writes_url_to_frontmatter_and_returns_empty(
     # is what persists. Test reflects that contract — don't reload from disk.
     assert note._post.metadata["video_url"] == url
     assert f"[Video overview](<{url}>)" in note._post.content
+    extra = captured["extra_args"]
+    assert isinstance(extra, list)
+    assert "--language" in extra
+    assert extra[extra.index("--language") + 1] == "en"
+
+
+def test_video_passes_language_from_frontmatter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+    url = "https://lh3.googleusercontent.com/notebooklm/zh"
+    _patch_run(monkeypatch, stdout=f"{url}\n", stderr="", captured=captured)
+    note = _make_note(
+        tmp_path,
+        "title: T\nlanguage: zh\nsource: https://x\nstatus: pending\n",
+    )
+    video.run(note)
+    extra = captured["extra_args"]
+    assert isinstance(extra, list)
+    assert extra[extra.index("--language") + 1] == "zh"
 
 
 def test_video_raises_when_stdout_has_no_url(

@@ -63,10 +63,31 @@ def test_data_table_passes_instructions(
     result = data_table.run(note)
     assert "data-table" in result
     assert captured["cmd"] == "data-table"
-    assert captured["extra_args"] == ["--instructions", "Compare A vs B by year"]
+    assert captured["extra_args"] == [
+        "--instructions",
+        "Compare A vs B by year",
+        "--language",
+        "en",
+    ]
     out_dir = captured["out_dir"]
     assert isinstance(out_dir, Path)
     assert out_dir.parts[-2:] == ("assets", "data-table")
+
+
+def test_data_table_language_from_frontmatter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+    _patch_run(monkeypatch, captured)
+    note = _make_note(
+        tmp_path,
+        "title: T\nlanguage: zh\nsource: https://x\n"
+        "data_table_instructions: 'X'\nstatus: pending\n",
+    )
+    data_table.run(note)
+    extra = captured["extra_args"]
+    assert isinstance(extra, list)
+    assert extra[extra.index("--language") + 1] == "zh"
 
 
 def test_data_table_missing_instructions_raises(

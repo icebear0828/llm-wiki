@@ -4,7 +4,13 @@ from pathlib import Path
 
 from llmwiki import notecraft
 
-from ._common import lookup_notebook_id, out_dir_for, persist_notebook_id, source_from
+from ._common import (
+    language_from,
+    lookup_notebook_id,
+    out_dir_for,
+    persist_notebook_id,
+    source_from,
+)
 from ._types import NoteLike
 
 _VALID_STYLES = {"sketch_note", "professional", "bento_grid"}
@@ -37,7 +43,11 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
         "infographic",
         source=source_from(note),
         out_dir=out,
-        extra_args=["--style", style, "--orientation", orientation],
+        extra_args=[
+            "--style", style,
+            "--orientation", orientation,
+            "--language", language_from(note),
+        ],
         timeout=3600.0,
         return_full=True,
         notebook_id=lookup_notebook_id(note),

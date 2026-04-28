@@ -67,6 +67,8 @@ def test_infographic_defaults(
         "professional",
         "--orientation",
         "landscape",
+        "--language",
+        "en",
     ]
     out_dir = captured["out_dir"]
     assert isinstance(out_dir, Path)
@@ -90,7 +92,24 @@ def test_infographic_frontmatter_override(
         "bento_grid",
         "--orientation",
         "portrait",
+        "--language",
+        "en",
     ]
+
+
+def test_infographic_language_from_frontmatter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+    _patch_run(monkeypatch, captured)
+    note = _make_note(
+        tmp_path,
+        "title: T\nlanguage: ja\nsource: https://x\nstatus: pending\n",
+    )
+    infographic.run(note)
+    extra = captured["extra_args"]
+    assert isinstance(extra, list)
+    assert extra[extra.index("--language") + 1] == "ja"
 
 
 def test_infographic_invalid_style_raises(

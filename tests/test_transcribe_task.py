@@ -75,7 +75,7 @@ def test_transcribe_with_source_file(
     assert (transcripts_dir / "voice.json").is_file()
 
     reloaded = Note(note_path)
-    assert "## 转录" in reloaded.body
+    assert "## Transcription" in reloaded.body
     assert "hello" in reloaded.body
     assert reloaded._post.metadata["language"] == "en"
     assert reloaded._post.metadata["duration_seconds"] == pytest.approx(1.5)
@@ -107,6 +107,7 @@ def test_transcribe_with_embed_only(
     assert payload[0]["text"] == "ni hao"
     reloaded = Note(note_path)
     assert "ni hao" in reloaded.body
+    assert "## 转录" in reloaded.body
     assert reloaded._post.metadata["language"] == "zh"
     assert out["transcript"].name == "clip.json"
 
@@ -160,3 +161,40 @@ def test_transcribe_registered(tmp_path: Path) -> None:
     assert "transcribe" in TASK_REGISTRY
     for required in ("audio", "report", "slides", "video", "flashcards"):
         assert required in TASK_REGISTRY
+
+
+@pytest.mark.parametrize(
+    "detected_lang,expected_prefix",
+    [
+        ("en", "## Transcription"),
+        ("zh", "## 转录"),
+        ("ja", "## 文字起こし"),
+        ("ko", "## 전사"),
+        ("xx", "## Transcription"),  # unknown falls back to en
+    ],
+)
+def test_transcribe_header_localized_by_detected_language(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    detected_lang: str,
+    expected_prefix: str,
+) -> None:
+    vault = _make_vault(tmp_path)
+    audio = vault / "raw" / "x.wav"
+    audio.write_bytes(b"a")
+    note_path = vault / "raw" / "x.md"
+    note_path.write_text(
+        "---\n"
+        "title: x\n"
+        "source_file: raw/x.wav\n"
+        "tags: [task/transcribe]\n"
+        "---\n"
+        "![[raw/x.wav]]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        transcribe, "WhisperClient", _fake_transcribe(text="t", lang=detected_lang)
+    )
+    transcribe.run(Note(note_path))
+    reloaded = Note(note_path)
+    assert expected_prefix in reloaded.body

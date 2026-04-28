@@ -13,7 +13,7 @@ Personal multimodal intelligent knowledge base: Obsidian Vault + Git autopilot +
 
 - `raw/` — Inbox (raw PDFs, web clippings, recordings, externally imported notes)
 - `wiki/` — Structured knowledge zone (finalized Markdown with bidirectional links)
-- `assets/{audio,video,slides,report,quiz}/` — Notecraft multimodal artifacts
+- `assets/{audio,video,slides,report,quiz,arxiv}/` — Notecraft multimodal artifacts + arxiv PDFs
 - `vendor/notebooklm/` — git submodule; all generation commands via `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python package (`wikictl` CLI, watcher, ingest, tasks)
 
@@ -53,8 +53,10 @@ Personal multimodal intelligent knowledge base: Obsidian Vault + Git autopilot +
 title: "..."
 source: "https://..."
 created: 2026-04-25T09:05:00+08:00
-tags: [task/audio, task/slides]   # task/* triggers background generation
+language: en                       # optional; passed to vendor `-l` for audio/report/video/infographic/slides/data-table
+tags: [task/audio, task/slides]    # task/* triggers background generation
 status: pending                    # pending | processing | done | error
+arxiv_id: "2401.12345"             # optional; consumed by task/arxiv
 artifacts:                         # written back by watcher
   audio: assets/audio/x.mp3
   slides: assets/slides/x.pdf
@@ -72,6 +74,7 @@ Upon completion, the watcher removes the corresponding `task/*` tag, sets `statu
 
 ## Task Vocabulary (`#task/*`)
 
+- `#task/arxiv` — triggers `tasks.arxiv.run(note)`
 - `#task/audio` — triggers `tasks.audio.run(note)`
 - `#task/chat` — triggers `tasks.chat.run(note)`
 - `#task/data-table` — triggers `tasks.data-table.run(note)`
@@ -89,48 +92,33 @@ Upon completion, the watcher removes the corresponding `task/*` tag, sets `statu
 
 ```
 wiki/
-├── aistudio-skills/
-│   ├── app/
-│   ├── skills/
-│   └── copy_skills.cjs
 ├── assets/
+│   ├── arxiv/
 │   ├── audio/
-│   ├── chat/
-│   ├── data-table/
-│   ├── images/
 │   ├── infographic/
-│   ├── quiz/
-│   ├── report/
 │   ├── slides/
-│   ├── source-add/
-│   ├── video/
-│   └── ALERT-session-expired.md
+│   └── source-add/
+├── docs/
+│   ├── SETUP.en.md
+│   └── SETUP.md
 ├── optional-skills/
 │   └── llmwiki/
 ├── raw/
-│   ├── 20260426-035707-http-raw.md
-│   ├── 20260426-035707-https-en-wikipedia-org-wiki-markdown.md
-│   ├── 20260426-035709-test-upload.md
-│   ├── 20260426-035709-test-upload.txt
-│   ├── 20260426-035942-1-1.md
-│   ├── 20260426-040128-https-en-wikipedia-org-wiki-https.md
-│   ├── 20260426-040140-123.md
-│   ├── e2e-46-audio-1777212602.md
-│   ├── e2e-46-infographic-1777212602.md
-│   ├── e2e-audio-1777205922.md
-│   ├── e2e-chat-1777208379.md
-│   ├── e2e-infographic-1777207616.md
-│   └── e2e-sourceadd-1777208266.md
+│   ├── arxiv-2310.06825.md
+│   ├── arxiv-2401.12345.md
+│   └── arxiv-2402.03300v2.md
 ├── skills/
 │   └── wikicraft/
 ├── src/
 │   └── llmwiki/
 ├── tests/
 │   ├── e2e/
+│   ├── test_arxiv_task.py
 │   ├── test_autopilot_config.py
 │   ├── test_chat_task.py
 │   ├── test_cli.py
 │   ├── test_cli_context.py
+│   ├── test_common_language.py
 │   ├── test_data_table_task.py
 │   ├── test_gateway_cli.py
 │   ├── test_gateway_config.py
@@ -155,6 +143,7 @@ wiki/
 │   ├── test_notecraft_parse.py
 │   ├── test_notify.py
 │   ├── test_quiz_task.py
+│   ├── test_r2.py
 │   ├── test_rag_callback.py
 │   ├── test_rag_cli.py
 │   ├── test_rag_index.py
@@ -169,21 +158,21 @@ wiki/
 │   ├── test_vault.py
 │   └── test_video_task.py
 ├── wiki/
-│   ├── aistudio-skills-analysis.md
-│   ├── e2e-video-1777208418.md
-│   ├── fleekhorse.md
-│   ├── olafsen-protocol.md
-│   └── zephyrplum.md
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── GEMINI.md
+├── LICENSE
+├── README.en.md
 ├── README.md
-├── SOUL.md.example
-├── USER.md.example
+├── SOUL.md
+├── USER.md
 ├── create_analysis_note.py
 ├── gateway.toml
+├── gateway.toml.example
 ├── im.toml
+├── im.toml.example
 ├── imagen.toml
+├── imagen.toml.example
 ├── pyproject.toml
 └── uv.lock
 ```
