@@ -13,7 +13,7 @@ Personal multimodal intelligent knowledge base: Obsidian Vault + Git autopilot +
 
 - `raw/` — Inbox (raw PDFs, web clippings, recordings, externally imported notes)
 - `wiki/` — Structured knowledge zone (finalized Markdown with bidirectional links)
-- `assets/{audio,video,slides,report,quiz,arxiv}/` — Notecraft multimodal artifacts + arxiv PDFs
+- `assets/{audio,video,slides,report,quiz,arxiv,youtube}/` — Notecraft artifacts + arxiv PDFs + YouTube transcripts
 - `vendor/notebooklm/` — git submodule; all generation commands via `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python package (`wikictl` CLI, watcher, ingest, tasks)
 
@@ -57,6 +57,7 @@ language: en                       # optional; passed to vendor `-l` for audio/r
 tags: [task/audio, task/slides]    # task/* triggers background generation
 status: pending                    # pending | processing | done | error
 arxiv_id: "2401.12345"             # optional; consumed by task/arxiv
+youtube_id: "tj8ggd8UvB0"          # optional; consumed by task/youtube
 artifacts:                         # written back by watcher
   audio: assets/audio/x.mp3
   slides: assets/slides/x.pdf
@@ -87,6 +88,7 @@ Upon completion, the watcher removes the corresponding `task/*` tag, sets `statu
 - `#task/source-add` — triggers `tasks.source-add.run(note)`
 - `#task/transcribe` — triggers `tasks.transcribe.run(note)`
 - `#task/video` — triggers `tasks.video.run(note)`
+- `#task/youtube` — triggers `tasks.youtube.run(note)`
 
 ## Current Directory (live)
 
@@ -97,16 +99,32 @@ wiki/
 │   ├── audio/
 │   ├── infographic/
 │   ├── slides/
-│   └── source-add/
+│   ├── source-add/
+│   └── youtube/
 ├── docs/
 │   ├── SETUP.en.md
 │   └── SETUP.md
 ├── optional-skills/
 │   └── llmwiki/
 ├── raw/
+│   ├── arxiv-2306.13213.md
+│   ├── arxiv-2307.02483.md
+│   ├── arxiv-2307.15043.md
+│   ├── arxiv-2308.03825.md
+│   ├── arxiv-2308.06463.md
+│   ├── arxiv-2310.04451.md
 │   ├── arxiv-2310.06825.md
+│   ├── arxiv-2310.08419.md
+│   ├── arxiv-2312.02119.md
+│   ├── arxiv-2401.06373.md
 │   ├── arxiv-2401.12345.md
-│   └── arxiv-2402.03300v2.md
+│   ├── arxiv-2402.03300v2.md
+│   ├── arxiv-2402.11753.md
+│   ├── arxiv-2404.01833.md
+│   ├── arxiv-2404.02151.md
+│   ├── youtube-dQw4w9WgXcQ.md
+│   ├── youtube-jNQXAC9IVRw.md
+│   └── youtube-tj8ggd8UvB0.md
 ├── skills/
 │   └── wikicraft/
 ├── src/
@@ -156,8 +174,11 @@ wiki/
 │   ├── test_tasks_notebook_persist.py
 │   ├── test_transcribe_task.py
 │   ├── test_vault.py
-│   └── test_video_task.py
+│   ├── test_video_task.py
+│   └── test_youtube_task.py
 ├── wiki/
+│   ├── artifacts/
+│   └── techniques/
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── GEMINI.md

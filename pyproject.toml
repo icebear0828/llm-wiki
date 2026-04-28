@@ -17,6 +17,7 @@ dependencies = [
     "trafilatura>=1.12",
     "python-telegram-bot>=21.6",
     "boto3>=1.42.59",
+    "youtube-transcript-api>=0.6.2",
 ]
 
 [project.scripts]
