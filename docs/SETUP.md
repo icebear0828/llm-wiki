@@ -98,7 +98,7 @@ node vendor/notebooklm/scripts/extract-session-cdp.mjs
 `gateway.toml`：
 ```toml
 port = 8080
-master_key = "<REDACTED-MASTER-KEY>"
+master_key = "sk-pick-your-own"
 
 [backends.openai]
 api_base = "https://your-proxy.example.com"

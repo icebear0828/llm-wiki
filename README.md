@@ -15,6 +15,12 @@
 uv sync
 git -c protocol.file.allow=always submodule update --init --recursive
 (cd vendor/notebooklm && npm i && npm run build) && npm i ./vendor/notebooklm --no-save
+
+# 复制配置模板，按需填入你的 key（也可走 env 覆盖，见各 .example 注释）
+cp gateway.toml.example gateway.toml
+cp imagen.toml.example  imagen.toml
+cp im.toml.example      im.toml
+
 uv run wikictl gateway init && uv run wikictl im init && uv run wikictl imagen init && uv run wikictl stt init && uv run wikictl autopilot init
 npx notebooklm export-session
 uv run wikictl daemon

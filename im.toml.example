@@ -1,3 +1,6 @@
+# Copy to im.toml and fill in your own values.
+# Telegram bot token may be set here or via env LLMWIKI_TG_TOKEN.
+
 http_port = 8081
 # http_token = "<random>"   # uncomment to require X-Llmwiki-Token header
 default_tags = []
@@ -7,7 +10,8 @@ url_fetch_timeout = 30
 [telegram]
 bot_token = ""               # or set env LLMWIKI_TG_TOKEN
 allowed_user_ids = []        # whitelist; empty = anyone
-# notify_chat_id = 12345  # 给 bot 发条消息后从 https://api.telegram.org/bot<token>/getUpdates 拿
+# notify_chat_id = 12345
+
 [telegram.command_default_tags]
 # audio = ["task/audio"]
 # report = ["task/report"]

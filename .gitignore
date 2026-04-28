@@ -25,14 +25,19 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Vault transient
-raw/.cache/
+# Vault content (user-local; never committed to the framework repo).
+# See *.example templates and docs/SETUP.md for layout.
+raw/
+wiki/
+assets/
 *.tmp
 *.swp
 .cookiejar_*
-assets/**/.cookiejar_*
 
-# Local secrets / config overrides
+# Local secrets / config overrides — copy from *.example and fill in.
+gateway.toml
+imagen.toml
+im.toml
 .env
 .env.local
 config.local.toml

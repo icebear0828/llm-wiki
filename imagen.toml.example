@@ -1,0 +1,10 @@
+# Copy to imagen.toml and fill in your own values.
+# api_key may be set here or via env LLMWIKI_IMAGEN_KEY (recommended for CI/Docker).
+
+backend = "gemini"                                # "gemini" or "openai"
+base_url = "https://generativelanguage.googleapis.com/v1beta"
+api_key = ""
+model = "gemini-2.0-flash-exp"
+output_subdir = "assets/images"
+size = "1024x1024"
+timeout = 300.0

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,12 +11,21 @@ DEFAULT_MODELS: dict[str, list[str]] = {
     "openai": ["gpt-4o", "gpt-4o-mini"],
     "anthropic": ["claude-sonnet-4-6", "claude-opus-4-7"],
     "gemini": ["gemini-2.0-flash"],
-    "openrouter": ["openrouter/google/gemini-2.0-flash-lite-preview-02-05:free", "openrouter/meta-llama/llama-3-8b-instruct:free"],
+    "openrouter": [
+        "openrouter/google/gemini-2.0-flash-lite-preview-02-05:free",
+        "openrouter/meta-llama/llama-3-8b-instruct:free",
+    ],
 }
 
 DEFAULT_TEMPLATE = """\
+# Local gateway config — fill in your own values. Not committed to git.
+# Sensitive fields can also be set via env vars (recommended for CI/Docker):
+#   LLMWIKI_GATEWAY_MASTER_KEY            -> master_key
+#   LLMWIKI_BACKEND_<NAME>_KEY            -> [backends.<name>] api_key
+# (e.g. LLMWIKI_BACKEND_OPENAI_KEY)
+
 port = 8080
-master_key = "<REDACTED-MASTER-KEY>"
+master_key = ""
 request_timeout = 600
 
 # RAG injection (issue #14)
@@ -25,17 +35,17 @@ request_timeout = 600
 
 [backends.openai]
 api_base = ""
-api_key = "dummy"
+api_key = ""
 models = ["gpt-4o", "gpt-4o-mini"]
 
 [backends.anthropic]
 api_base = ""
-api_key = "dummy"
+api_key = ""
 models = ["claude-sonnet-4-6", "claude-opus-4-7"]
 
 [backends.gemini]
 api_base = ""
-api_key = "dummy"
+api_key = ""
 models = ["gemini-2.0-flash"]
 
 [backends.openrouter]
@@ -56,7 +66,7 @@ class BackendConfig:
 @dataclass(frozen=True)
 class GatewayConfig:
     port: int = 8080
-    master_key: str = "<REDACTED-MASTER-KEY>"
+    master_key: str = ""
     request_timeout: int = 600
     backends: dict[str, BackendConfig] = field(default_factory=dict)
     rag_enabled: bool = True
@@ -73,7 +83,11 @@ class GatewayConfig:
             data = tomllib.load(f)
 
         port = int(data.get("port", 8080))
-        master_key = str(data.get("master_key", "<REDACTED-MASTER-KEY>"))
+        master_key = str(data.get("master_key", ""))
+        env_master = os.environ.get("LLMWIKI_GATEWAY_MASTER_KEY", "")
+        if env_master:
+            master_key = env_master
+
         request_timeout = int(data.get("request_timeout", 600))
         rag_enabled = bool(data.get("rag_enabled", True))
         rag_top_k = int(data.get("rag_top_k", 5))
@@ -87,6 +101,10 @@ class GatewayConfig:
                     continue
                 api_base = str(raw.get("api_base", "")).strip()
                 api_key = str(raw.get("api_key", ""))
+                env_var = f"LLMWIKI_BACKEND_{name.upper()}_KEY"
+                env_key = os.environ.get(env_var, "")
+                if env_key:
+                    api_key = env_key
                 models_raw = raw.get("models") or DEFAULT_MODELS.get(name, [])
                 models = [str(m) for m in models_raw if isinstance(m, str)]
                 backends[name] = BackendConfig(

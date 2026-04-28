@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from llmwiki.gateway.config import (
     CONFIG_FILENAME,
     BackendConfig,
@@ -13,7 +15,7 @@ from llmwiki.gateway.config import (
 def test_load_returns_defaults_when_missing(tmp_path: Path) -> None:
     cfg = GatewayConfig.load(tmp_path)
     assert cfg.port == 8080
-    assert cfg.master_key == "<REDACTED-MASTER-KEY>"
+    assert cfg.master_key == ""
     assert cfg.request_timeout == 600
     assert cfg.backends == {}
 
@@ -124,3 +126,75 @@ def test_load_defaults_preserve_rag_enabled(tmp_path: Path) -> None:
     assert cfg.rag_enabled is True
     assert cfg.rag_top_k == 5
     assert cfg.rag_min_query_length == 10
+
+
+def test_default_template_has_no_secrets(tmp_path: Path) -> None:
+    """DEFAULT_TEMPLATE must ship with empty key fields so it is safe to commit."""
+    path, _ = write_default_template(tmp_path)
+    contents = path.read_text(encoding="utf-8")
+    assert 'master_key = ""' in contents
+    assert "REDACTED" not in contents
+    assert "proxypool" not in contents
+    assert "sk-gateway-vps" not in contents
+    assert "sk-llmwiki-local" not in contents
+
+
+def test_env_overrides_master_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / CONFIG_FILENAME).write_text(
+        'master_key = "from-toml"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("LLMWIKI_GATEWAY_MASTER_KEY", "from-env")
+    cfg = GatewayConfig.load(tmp_path)
+    assert cfg.master_key == "from-env"
+
+
+def test_env_master_key_only_overrides_when_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / CONFIG_FILENAME).write_text(
+        'master_key = "from-toml"\n', encoding="utf-8"
+    )
+    monkeypatch.delenv("LLMWIKI_GATEWAY_MASTER_KEY", raising=False)
+    cfg = GatewayConfig.load(tmp_path)
+    assert cfg.master_key == "from-toml"
+
+
+def test_env_overrides_backend_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / CONFIG_FILENAME).write_text(
+        """
+[backends.openai]
+api_base = "http://localhost:1/v1"
+api_key = "from-toml"
+models = ["gpt-4o"]
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LLMWIKI_BACKEND_OPENAI_KEY", "from-env")
+    cfg = GatewayConfig.load(tmp_path)
+    assert cfg.backends["openai"].api_key == "from-env"
+
+
+def test_env_backend_key_does_not_leak_across_backends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / CONFIG_FILENAME).write_text(
+        """
+[backends.openai]
+api_base = "http://localhost:1/v1"
+api_key = "openai-toml"
+models = ["gpt-4o"]
+
+[backends.gemini]
+api_base = "http://localhost:2"
+api_key = "gemini-toml"
+models = ["gemini-2.0-flash"]
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LLMWIKI_BACKEND_OPENAI_KEY", "openai-env")
+    monkeypatch.delenv("LLMWIKI_BACKEND_GEMINI_KEY", raising=False)
+    cfg = GatewayConfig.load(tmp_path)
+    assert cfg.backends["openai"].api_key == "openai-env"
+    assert cfg.backends["gemini"].api_key == "gemini-toml"

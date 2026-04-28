@@ -9,7 +9,7 @@ from llmwiki.gateway.litellm_config import render_yaml, write_config
 def _sample_cfg() -> GatewayConfig:
     return GatewayConfig(
         port=8080,
-        master_key="<REDACTED-MASTER-KEY>",
+        master_key="sk-test-master",
         request_timeout=600,
         backends={
             "openai": BackendConfig(
@@ -48,7 +48,7 @@ def test_render_yaml_contains_all_three_backends() -> None:
 def test_render_yaml_wires_master_key_and_timeout() -> None:
     yaml = render_yaml(_sample_cfg())
     assert "master_key:" in yaml
-    assert "<REDACTED-MASTER-KEY>" in yaml
+    assert "sk-test-master" in yaml
     assert "request_timeout: 600" in yaml
 
 
@@ -76,7 +76,7 @@ def test_render_yaml_is_parseable_by_pyyaml() -> None:
     assert isinstance(parsed, dict)
     assert isinstance(parsed["model_list"], list)
     assert len(parsed["model_list"]) == 4
-    assert parsed["general_settings"]["master_key"] == "<REDACTED-MASTER-KEY>"
+    assert parsed["general_settings"]["master_key"] == "sk-test-master"
     assert parsed["litellm_settings"]["request_timeout"] == 600
     first = parsed["model_list"][0]
     assert "model_name" in first

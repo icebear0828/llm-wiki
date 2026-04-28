@@ -7,13 +7,12 @@ from pathlib import Path
 
 CONFIG_FILENAME = "imagen.toml"
 
-# Default points at proxypool's Gemini /v1beta route — opal/gemini-3-pro-image-preview
-# is the only image backend currently online (Banana-pro flow=401, ws/banana-pro
-# cooldown). When other backends recover, switch via gateway.toml + backend field.
+# Local imagen config — fill in your own gateway / api key. Not committed to git.
+# api_key may be set here or via env LLMWIKI_IMAGEN_KEY (recommended for CI/Docker).
 DEFAULT_TEMPLATE = """\
 backend = "gemini"
-base_url = "https://your-gateway.example.com/v1"
-api_key = "<REDACTED-GATEWAY-KEY>"   # or set env LLMWIKI_IMAGEN_KEY
+base_url = ""
+api_key = ""
 model = "opal/gemini-3-pro-image-preview"
 output_subdir = "assets/images"
 size = "1024x1024"
@@ -24,7 +23,7 @@ timeout = 300.0
 @dataclass(frozen=True)
 class ImagenConfig:
     backend: str = "gemini"      # "gemini" (Google /v1beta) or "openai" (/v1/images/generations)
-    base_url: str = "https://your-gateway.example.com/v1"
+    base_url: str = ""
     api_key: str = ""
     model: str = "opal/gemini-3-pro-image-preview"
     output_subdir: str = "assets/images"
@@ -40,7 +39,7 @@ class ImagenConfig:
                 data = tomllib.load(f)
 
         backend = str(data.get("backend", "gemini"))
-        base_url = str(data.get("base_url", "https://your-gateway.example.com/v1"))
+        base_url = str(data.get("base_url", ""))
         api_key = str(data.get("api_key", "") or "")
         model = str(data.get("model", "opal/gemini-3-pro-image-preview"))
         output_subdir = str(data.get("output_subdir", "assets/images"))

@@ -1,0 +1,29 @@
+# Copy to gateway.toml and fill in your own values.
+# Sensitive fields can also be supplied via env vars (recommended for CI/Docker):
+#   LLMWIKI_GATEWAY_MASTER_KEY            -> master_key
+#   LLMWIKI_BACKEND_<NAME>_KEY            -> [backends.<name>] api_key
+# (e.g. LLMWIKI_BACKEND_OPENAI_KEY)
+
+port = 8080
+master_key = ""
+request_timeout = 600
+
+# RAG injection (issue #14)
+# rag_enabled = true
+# rag_top_k = 5
+# rag_min_query_length = 10
+
+[backends.openai]
+api_base = "https://api.openai.com/v1"
+api_key = ""
+models = ["gpt-4o", "gpt-4o-mini"]
+
+[backends.anthropic]
+api_base = "https://api.anthropic.com"
+api_key = ""
+models = ["claude-sonnet-4-6", "claude-opus-4-7"]
+
+[backends.gemini]
+api_base = "https://generativelanguage.googleapis.com/v1beta"
+api_key = ""
+models = ["gemini-2.0-flash"]

@@ -16,7 +16,7 @@ from llmwiki.gateway.server import health_check, start
 pytestmark = pytest.mark.e2e
 
 PORT = 8079
-MASTER_KEY = "<REDACTED-MASTER-KEY>-e2e"
+MASTER_KEY = "sk-test-master-e2e"
 
 
 def _free_port_or_skip(port: int) -> None:
