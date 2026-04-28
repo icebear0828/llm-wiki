@@ -16,6 +16,7 @@ dependencies = [
     "fastapi>=0.115",
     "trafilatura>=1.12",
     "python-telegram-bot>=21.6",
+    "boto3>=1.42.59",
 ]
 
 [project.scripts]
