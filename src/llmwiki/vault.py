@@ -76,6 +76,14 @@ class NotebookIndex:
         self._ensure_loaded()
         self._data[key] = notebook_id
 
+    def items(self) -> list[tuple[str, str]]:
+        self._ensure_loaded()
+        return list(self._data.items())
+
+    def remove(self, key: str) -> None:
+        self._ensure_loaded()
+        self._data.pop(key, None)
+
     def save(self) -> None:
         self._ensure_loaded()
         self.path.parent.mkdir(parents=True, exist_ok=True)

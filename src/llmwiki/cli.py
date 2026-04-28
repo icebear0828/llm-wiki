@@ -752,5 +752,91 @@ def imagen_generate(
             console.print(f"[green]saved[/green] {p}")
 
 
+notecraft_app = typer.Typer(no_args_is_help=True, help="NotebookLM automations and workspace management")
+app.add_typer(notecraft_app, name="notecraft")
+
+
+@notecraft_app.command("gc")
+def notecraft_gc(
+    days: float = typer.Option(7.0, "--days", "-d", help="Retain notebooks newer than N days"),
+    vault_path: Path | None = typer.Option(None, "--vault"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Just print what would be deleted"),
+) -> None:
+    import time
+    from llmwiki.vault import Vault, NotebookIndex, Note
+    from llmwiki.notecraft import delete
+
+    root = _discover_vault_root(vault_path)
+    vault = Vault(root)
+    index = NotebookIndex(vault)
+    
+    items = index.items()
+    if not items:
+        console.print("[dim]no notebooks in index, nothing to collect[/dim]")
+        return
+        
+    notes_by_stem: dict[str, Note] = {}
+    for d in (vault.raw, vault.wiki):
+        if not d.is_dir(): continue
+        for md in d.rglob("*.md"):
+            try:
+                note = Note(md)
+                notes_by_stem[md.stem] = note
+            except Exception:
+                continue
+
+    now = time.time()
+    to_delete: list[str] = []
+    keys_to_remove: list[str] = []
+
+    for stem, nb_id in items:
+        note = notes_by_stem.get(stem)
+        if note is None:
+            # Orphan
+            to_delete.append(nb_id)
+            keys_to_remove.append(stem)
+            continue
+            
+        status = note.status
+        if status in ("pending", "processing"):
+            continue
+            
+        try:
+            mtime = note.path.stat().st_mtime
+        except OSError:
+            continue
+            
+        age_days = (now - mtime) / 86400.0
+        if age_days > days:
+            to_delete.append(nb_id)
+            keys_to_remove.append(stem)
+
+    if not to_delete:
+        console.print("[dim]no notebooks eligible for garbage collection[/dim]")
+        return
+
+    console.print(f"[yellow]found {len(to_delete)} notebooks to delete[/yellow]")
+    if dry_run:
+        for k, nb_id in zip(keys_to_remove, to_delete):
+            console.print(f" - {k}: {nb_id}")
+        return
+
+    chunk_size = 20
+    for i in range(0, len(to_delete), chunk_size):
+        chunk = to_delete[i:i + chunk_size]
+        console.print(f"deleting batch {i//chunk_size + 1} ({len(chunk)} notebooks)...")
+        try:
+            delete(chunk)
+        except Exception as e:
+            console.print(f"[red]error deleting batch: {e}[/red]")
+            continue
+            
+        for k in keys_to_remove[i:i + chunk_size]:
+            index.remove(k)
+            
+    index.save()
+    console.print("[green]garbage collection completed[/green]")
+
+
 if __name__ == "__main__":
     app()
