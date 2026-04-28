@@ -78,6 +78,7 @@ class GitAutopilot:
         self._debounce = debounce_seconds
         self._cfg = autopilot_cfg if autopilot_cfg is not None else AutopilotConfig()
         self._lock = threading.Lock()
+        self._git_lock = threading.Lock()
         self._timer: threading.Timer | None = None
         self._push_timer: threading.Timer | None = None
         self._observer: Observer | None = None
@@ -181,7 +182,8 @@ class GitAutopilot:
         if self._cfg.push_strategy == "force-with-lease":
             argv.append("--force-with-lease")
         try:
-            subprocess.run(argv, cwd=root, check=True, capture_output=True, text=True)
+            with self._git_lock:
+                subprocess.run(argv, cwd=root, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "").strip()
             raise PushFailed(stderr or f"git push exited with {exc.returncode}") from exc
@@ -189,22 +191,23 @@ class GitAutopilot:
     def _commit(self, message: str | None = None) -> None:
         msg = message if message is not None else self._read_message()
         root = str(self.vault.root)
-        subprocess.run(
-            ["git", "add", "-A"],
-            cwd=root,
-            check=True,
-            capture_output=True,
-        )
-        cached = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"],
-            cwd=root,
-            capture_output=True,
-        )
-        if cached.returncode == 0:
-            return
-        subprocess.run(
-            ["git", "commit", "-m", msg],
-            cwd=root,
-            check=True,
-            capture_output=True,
-        )
+        with self._git_lock:
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
+            cached = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"],
+                cwd=root,
+                capture_output=True,
+            )
+            if cached.returncode == 0:
+                return
+            subprocess.run(
+                ["git", "commit", "-m", msg],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
