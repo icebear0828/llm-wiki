@@ -72,6 +72,35 @@ def test_parse_video_id_rejects_garbage_and_overmatch(raw: str) -> None:
         youtube._parse_video_id(raw)
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        # Non-YouTube hosts must NOT yield an id even if their path/query
+        # contains an 11-char base64url-ish slug — id alphabet is too generic.
+        "https://example.com/?v=tj8ggd8UvB0",
+        "https://github.com/owner/abcdefghijk",
+        "https://github.com/icebear0828/llm-wiki/issues/53",
+        "https://malicious.example.com/watch?v=tj8ggd8UvB0",
+        "https://example.com/embed/tj8ggd8UvB0",
+    ],
+)
+def test_parse_video_id_rejects_non_youtube_hosts(raw: str) -> None:
+    with pytest.raises(notecraft.NotecraftError):
+        youtube._parse_video_id(raw)
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # YouTube subdomain variants must work
+        ("https://music.youtube.com/watch?v=tj8ggd8UvB0", "tj8ggd8UvB0"),
+        ("https://www.youtube-nocookie.com/embed/tj8ggd8UvB0", "tj8ggd8UvB0"),
+    ],
+)
+def test_parse_video_id_accepts_youtube_subdomains(raw: str, expected: str) -> None:
+    assert youtube._parse_video_id(raw) == expected
+
+
 # ---------- ID resolution priority ----------
 
 def test_resolve_id_arg_wins(tmp_path: Path) -> None:
@@ -98,6 +127,26 @@ def test_resolve_id_from_source_url(tmp_path: Path) -> None:
 def test_resolve_id_missing_raises(tmp_path: Path) -> None:
     vault = _make_vault(tmp_path)
     note = _make_note(vault, "title: T\n")
+    with pytest.raises(notecraft.NotecraftError):
+        youtube._resolve_video_id(note, None)
+
+
+def test_resolve_id_falls_through_bad_frontmatter_to_source_url(tmp_path: Path) -> None:
+    """If `youtube_id:` frontmatter is unparseable, fall back to source URL."""
+    vault = _make_vault(tmp_path)
+    note = _make_note(
+        vault,
+        "title: T\nyoutube_id: 'not a real id'\nsource: https://www.youtube.com/watch?v=tj8ggd8UvB0\n",
+    )
+    assert youtube._resolve_video_id(note, None) == "tj8ggd8UvB0"
+
+
+def test_resolve_id_skips_non_youtube_source_url(tmp_path: Path) -> None:
+    """source URL with 11-char slug from non-YouTube host must NOT be picked up."""
+    vault = _make_vault(tmp_path)
+    note = _make_note(
+        vault, "title: T\nsource: https://github.com/owner/abcdefghijk\n"
+    )
     with pytest.raises(notecraft.NotecraftError):
         youtube._resolve_video_id(note, None)
 
@@ -154,6 +203,25 @@ def test_fetch_oembed_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
         youtube, "_http_get", lambda url, *, timeout=10.0: _FakeResp(status_code=503)
     )
     monkeypatch.setattr(youtube.time, "sleep", lambda _s: None)
+    with pytest.raises(notecraft.NotecraftError):
+        youtube._fetch_oembed("tj8ggd8UvB0")
+
+
+def test_fetch_oembed_404_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Deleted / private videos return 404 — not retryable, must raise."""
+    monkeypatch.setattr(
+        youtube, "_http_get", lambda url, *, timeout=10.0: _FakeResp(status_code=404)
+    )
+    with pytest.raises(notecraft.NotecraftError) as exc:
+        youtube._fetch_oembed("aaaaaaaaaaa")
+    assert "404" in str(exc.value)
+
+
+def test_fetch_oembed_malformed_json_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """200 status but garbage body — not JSON — must raise."""
+    monkeypatch.setattr(
+        youtube, "_http_get", lambda url, *, timeout=10.0: _FakeResp(text="<html>not json</html>")
+    )
     with pytest.raises(notecraft.NotecraftError):
         youtube._fetch_oembed("tj8ggd8UvB0")
 
@@ -261,6 +329,71 @@ def test_download_transcript_unavailable_raises(
 
     with pytest.raises(notecraft.NotecraftError):
         youtube._download_transcript("tj8ggd8UvB0", tmp_path)
+
+
+def test_download_transcript_empty_text_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All snippets empty / whitespace → no file written, return None."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    monkeypatch.setattr(
+        YouTubeTranscriptApi,
+        "fetch",
+        lambda self, video_id, languages=None, **kwargs: _FakeFetched(["  ", "", "\n"]),
+        raising=True,
+    )
+    monkeypatch.setattr(youtube, "_assets_youtube_dir", lambda *_a, **_kw: tmp_path)
+
+    out = youtube._download_transcript("tj8ggd8UvB0", tmp_path)
+    assert out is None
+    assert not (tmp_path / "tj8ggd8UvB0.txt").exists()
+
+
+def test_download_transcript_passes_languages_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Languages tuple passed by caller must reach the underlying fetch() call."""
+    captured: dict[str, Any] = {}
+
+    def fake_fetch(self, video_id, languages=None, **kwargs):
+        captured["languages"] = tuple(languages) if languages else None
+        return _FakeFetched(["x"])
+
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    monkeypatch.setattr(YouTubeTranscriptApi, "fetch", fake_fetch, raising=True)
+    monkeypatch.setattr(youtube, "_assets_youtube_dir", lambda *_a, **_kw: tmp_path)
+
+    youtube._download_transcript("tj8ggd8UvB0", tmp_path, languages=("ja", "en"))
+    assert captured["languages"] == ("ja", "en")
+
+
+# ---------- transcript language priority (frontmatter `language:`) ----------
+
+
+def test_transcript_language_priority_default_when_unset(tmp_path: Path) -> None:
+    vault = _make_vault(tmp_path)
+    note = _make_note(vault, "title: T\n")
+    assert youtube._transcript_language_priority(note) == ("zh-Hans", "zh-Hant", "zh", "en")
+
+
+def test_transcript_language_priority_zh_expands(tmp_path: Path) -> None:
+    vault = _make_vault(tmp_path)
+    note = _make_note(vault, "title: T\nlanguage: zh\n")
+    assert youtube._transcript_language_priority(note) == ("zh-Hans", "zh-Hant", "zh", "en")
+
+
+def test_transcript_language_priority_en_only(tmp_path: Path) -> None:
+    vault = _make_vault(tmp_path)
+    note = _make_note(vault, "title: T\nlanguage: en\n")
+    assert youtube._transcript_language_priority(note) == ("en",)
+
+
+def test_transcript_language_priority_other_with_en_fallback(tmp_path: Path) -> None:
+    vault = _make_vault(tmp_path)
+    note = _make_note(vault, "title: T\nlanguage: ja\n")
+    assert youtube._transcript_language_priority(note) == ("ja", "en")
 
 
 # ---------- end-to-end run() ----------

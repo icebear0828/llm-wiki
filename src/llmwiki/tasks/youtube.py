@@ -13,6 +13,7 @@ import httpx
 
 from llmwiki import notecraft
 
+from ._common import language_from
 from ._types import NoteLike
 
 
@@ -22,6 +23,19 @@ from ._types import NoteLike
 # Trailing `(?![A-Za-z0-9_-])` rejects 12+ char overmatch (e.g. `tj8ggd8UvB0extra`).
 _ID_PATTERN = re.compile(
     r"(?:^|(?<=[/:=]))(?P<id>[A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])",
+)
+_BARE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_YOUTUBE_HOSTS = frozenset(
+    {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtu.be",
+        "www.youtu.be",
+        "youtube-nocookie.com",
+        "www.youtube-nocookie.com",
+    }
 )
 _OEMBED_URL = "https://www.youtube.com/oembed"
 _CANONICAL_URL = "https://www.youtube.com/watch?v={id}"
@@ -51,22 +65,34 @@ class _Meta:
 
 
 def _parse_video_id(raw: str) -> str:
-    """Extract canonical 11-char YouTube video id from any common URL form, bare id, or `youtube:<id>` prefix."""
+    """Extract canonical 11-char YouTube video id from a YouTube URL, bare id, or `youtube:<id>` prefix.
+
+    Reject URLs from non-YouTube hosts even if their path/query contains an 11-char
+    base64url-ish segment — `[A-Za-z0-9_-]{11}` is too generic to assume a random
+    URL slug is a video id (e.g. github.com/owner/abcdefghijk).
+    """
     if not raw or not isinstance(raw, str):
         raise notecraft.NotecraftError(f"could not parse youtube id from {raw!r}")
     s = raw.strip()
-    # Try urllib first for ?v= queries (handles &t=42s etc. cleanly).
-    try:
-        parsed = urlparse(s)
+
+    parsed = urlparse(s)
+    if parsed.scheme and parsed.netloc:
+        host = parsed.netloc.lower().split(":")[0]
+        if host not in _YOUTUBE_HOSTS:
+            raise notecraft.NotecraftError(f"not a youtube url: {raw!r}")
+        # watch?v=<id> (and m.youtube / music.youtube variants)
         if parsed.query:
             qs = parse_qs(parsed.query)
             v = qs.get("v")
-            if v and v[0]:
-                cand = v[0]
-                if re.fullmatch(r"[A-Za-z0-9_-]{11}", cand):
-                    return cand
-    except ValueError:
-        pass
+            if v and _BARE_ID_PATTERN.fullmatch(v[0]):
+                return v[0]
+        # path forms: /watch (rare), /shorts/<id>, /embed/<id>, /v/<id>, youtu.be/<id>
+        match = _ID_PATTERN.search(parsed.path)
+        if match:
+            return match.group("id")
+        raise notecraft.NotecraftError(f"could not parse youtube id from {raw!r}")
+
+    # Not a URL: bare id (`tj8ggd8UvB0`) or `youtube:<id>` prefix form.
     match = _ID_PATTERN.search(s)
     if not match:
         raise notecraft.NotecraftError(f"could not parse youtube id from {raw!r}")
@@ -144,7 +170,26 @@ def _fetch_oembed(video_id: str) -> _Meta:
     )
 
 
-def _download_transcript(video_id: str, vault_root: Path) -> Path | None:
+_DEFAULT_TRANSCRIPT_LANGUAGES: tuple[str, ...] = ("zh-Hans", "zh-Hant", "zh", "en")
+
+
+def _transcript_language_priority(note: NoteLike) -> tuple[str, ...]:
+    """Resolve preferred caption languages. Frontmatter `language:` wins; sensible fallbacks fill in."""
+    lang = language_from(note, default="").strip()
+    if not lang:
+        return _DEFAULT_TRANSCRIPT_LANGUAGES
+    if lang == "zh":
+        return ("zh-Hans", "zh-Hant", "zh", "en")
+    if lang == "en":
+        return ("en",)
+    return (lang, "en")
+
+
+def _download_transcript(
+    video_id: str,
+    vault_root: Path,
+    languages: tuple[str, ...] = _DEFAULT_TRANSCRIPT_LANGUAGES,
+) -> Path | None:
     """Download YouTube captions to assets/youtube/<id>.txt. Returns None when no captions available."""
     out_dir = _assets_youtube_dir(vault_root)
     out_path = out_dir / f"{video_id}.txt"
@@ -159,9 +204,7 @@ def _download_transcript(video_id: str, vault_root: Path) -> Path | None:
     )
 
     try:
-        fetched = YouTubeTranscriptApi().fetch(
-            video_id, languages=("zh-Hans", "zh", "en")
-        )
+        fetched = YouTubeTranscriptApi().fetch(video_id, languages=languages)
     except (TranscriptsDisabled, NoTranscriptFound):
         return None
     except VideoUnavailable as exc:
@@ -223,6 +266,9 @@ def _writeback(
         except ValueError:
             md["source_file"] = str(transcript_path)
 
+    # Only prepend a header when the body is empty: oembed gives no abstract-like
+    # description (unlike arxiv's summary), and the captions live in source_file
+    # rather than the body to avoid polluting the Note view with thousands of lines.
     if meta.title and not n._post.content.strip():
         header = f"## {meta.title}\n\n"
         if meta.author_name:
@@ -236,7 +282,8 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
     video_id = _resolve_video_id(note, arg)
     vault_root = _vault_root_for(Path(note.path))
     meta = _fetch_oembed(video_id)
-    transcript_path = _download_transcript(video_id, vault_root)
+    languages = _transcript_language_priority(note)
+    transcript_path = _download_transcript(video_id, vault_root, languages)
     _writeback(note, video_id, meta, transcript_path)
     if transcript_path is not None:
         return {"youtube_transcript": transcript_path}

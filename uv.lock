@@ -1416,7 +1416,7 @@ requires-dist = [
     { name = "trafilatura", specifier = ">=1.12" },
     { name = "typer", specifier = ">=0.12" },
     { name = "watchdog", specifier = ">=4" },
-    { name = "youtube-transcript-api", specifier = ">=0.6.2" },
+    { name = "youtube-transcript-api", specifier = ">=1.0" },
 ]
 
 [package.metadata.requires-dev]
