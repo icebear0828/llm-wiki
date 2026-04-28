@@ -252,3 +252,15 @@ def run(
             notebook_id=parse_notebook_id(result.stderr or ""),
         )
     return artifact if artifact is not None else out_dir
+
+def delete(notebook_ids: list[str]) -> None:
+    """Delete one or more notebooks from NotebookLM."""
+    if not notebook_ids:
+        return
+    _ensure_installed()
+    argv = ["npx", "notebooklm", "delete", *notebook_ids]
+    try:
+        subprocess.run(argv, cwd=REPO_ROOT, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        raise NotecraftError(f"notecraft delete failed: {stderr}") from exc
