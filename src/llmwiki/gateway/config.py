@@ -10,6 +10,7 @@ DEFAULT_MODELS: dict[str, list[str]] = {
     "openai": ["gpt-4o", "gpt-4o-mini"],
     "anthropic": ["claude-sonnet-4-6", "claude-opus-4-7"],
     "gemini": ["gemini-2.0-flash"],
+    "openrouter": ["openrouter/google/gemini-2.0-flash-lite-preview-02-05:free", "openrouter/meta-llama/llama-3-8b-instruct:free"],
 }
 
 DEFAULT_TEMPLATE = """\
@@ -36,6 +37,11 @@ models = ["claude-sonnet-4-6", "claude-opus-4-7"]
 api_base = ""
 api_key = "dummy"
 models = ["gemini-2.0-flash"]
+
+[backends.openrouter]
+api_base = "https://openrouter.ai/api/v1"
+api_key = ""
+models = ["openrouter/google/gemini-2.0-flash-lite-preview-02-05:free", "openrouter/meta-llama/llama-3-8b-instruct:free"]
 """
 
 
