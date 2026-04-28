@@ -6,26 +6,40 @@ from pathlib import Path
 import frontmatter
 
 from llmwiki.vault import Note, Vault
-
-
-def _embed_lines(artifacts: dict[str, Path], vault: Vault) -> list[str]:
-    lines: list[str] = []
-    for p in artifacts.values():
-        try:
-            rel = p.resolve().relative_to(vault.root.resolve())
-        except ValueError:
-            rel = p
-        lines.append(f"![[{rel}]]")
-    return lines
+from llmwiki.r2 import R2Config, upload_asset
 
 
 def move_to_wiki(note: Note, vault: Vault, artifacts: dict[str, Path]) -> Note:
+    r2_cfg = R2Config.load(vault.root)
+    embeds: list[str] = []
+    
     for name, path in artifacts.items():
-        note.add_artifact(name, path)
+        url = None
+        if r2_cfg.enabled:
+            try:
+                url = upload_asset(r2_cfg, path, vault.root)
+            except Exception as e:
+                print(f"R2 upload failed for {path}: {e}")
+                
+        if url:
+            note.add_artifact(name, url)
+            embeds.append(f"![{name}]({url})")
+            if path.is_file():
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+        else:
+            note.add_artifact(name, path)
+            try:
+                rel = path.resolve().relative_to(vault.root.resolve())
+            except ValueError:
+                rel = path
+            embeds.append(f"![[{rel}]]")
+            
     note.set_status("done")
 
     new_path = vault.wiki / note.path.name
-    embeds = _embed_lines(artifacts, vault)
 
     body = note.body
     body_lines = body.splitlines()
@@ -33,7 +47,7 @@ def move_to_wiki(note: Note, vault: Vault, artifacts: dict[str, Path]) -> Note:
     for line in body_lines:
         if line.strip() == "":
             continue
-        if line.startswith("![[") and line.endswith("]]"):
+        if (line.startswith("![[") and line.endswith("]]")) or (line.startswith("![") and line.endswith(")")):
             existing_top.add(line.strip())
             continue
         break
