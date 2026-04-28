@@ -71,3 +71,22 @@ def source_from(note: NoteLike) -> NoteSource:
 
 def out_dir_for(subdir: str) -> Path:
     return REPO_ROOT / "assets" / subdir
+
+
+def language_from(note: NoteLike, default: str = "en") -> str:
+    """Read note frontmatter `language` (or `lang` alias) for vendor `-l` plumbing.
+
+    Falls back to `default` (matches vendor/notebooklm default of `en`). Both
+    user-set hints and transcribe.py's whisper-detected value land here.
+    """
+    post = getattr(note, "_post", None)
+    if post is None:
+        return default
+    meta = getattr(post, "metadata", None)
+    if not isinstance(meta, dict):
+        return default
+    for key in ("language", "lang"):
+        value = meta.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return default

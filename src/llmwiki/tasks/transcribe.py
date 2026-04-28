@@ -8,9 +8,20 @@ from typing import Protocol
 from llmwiki.stt.client import Transcript, WhisperClient
 from llmwiki.stt.config import SttConfig
 
+from ._common import language_from
 from ._types import NoteLike
 
 _AUDIO_EXTS = ("ogg", "mp3", "wav", "m4a", "flac")
+
+_HEADER_BY_LANG: dict[str, str] = {
+    "zh": "## 转录",
+    "en": "## Transcription",
+    "ja": "## 文字起こし",
+    "ko": "## 전사",
+    "fr": "## Transcription",
+    "de": "## Transkription",
+    "es": "## Transcripción",
+}
 _EMBED_RE = re.compile(
     r"!\[\[(raw/[^\]\|]+\.(?:" + "|".join(_AUDIO_EXTS) + r"))(?:\|[^\]]*)?\]\]",
     re.IGNORECASE,
@@ -48,8 +59,11 @@ def _find_audio(note: NoteLike, vault_root: Path) -> Path:
 
 def _set_metadata(note: NoteLike, transcript: Transcript) -> None:
     metadata = getattr(note, "_post").metadata
+    # Don't clobber a user-set `language`; only fill if the field is missing/blank.
     if transcript.language:
-        metadata["language"] = transcript.language
+        existing = metadata.get("language")
+        if not isinstance(existing, str) or not existing.strip():
+            metadata["language"] = transcript.language
     if transcript.duration is not None:
         metadata["duration_seconds"] = transcript.duration
     metadata["stt_model"] = "mlx-whisper-large-v3"
@@ -73,8 +87,11 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
     )
 
     lang_label = transcript.language or "auto"
+    # User-set frontmatter `language` wins (intent); fall back to whisper-detected.
+    header_lang = language_from(note, default="") or transcript.language or ""
+    prefix = _HEADER_BY_LANG.get(header_lang, _HEADER_BY_LANG["en"])
     header = (
-        f"## 转录 (whisper-large-v3 / lang={lang_label})\n\n"
+        f"{prefix} (whisper-large-v3 / lang={lang_label})\n\n"
         f"{transcript.text}\n\n"
     )
     ops: _NoteOps = note  # type: ignore[assignment]

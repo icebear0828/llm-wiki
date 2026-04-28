@@ -1,5 +1,7 @@
 # LLM-Wiki — SETUP
 
+> **中文** · [English](./SETUP.en.md)
+
 把这个 vault 从零跑起来要：装依赖 → 写 4 个 toml → 抽一份 NotebookLM session → 起 daemon。下面是按顺序的最短路径。
 
 > 所有命令在仓根（vault 根 = git 仓库根）执行。Python 一律 `uv run`，禁止裸 `python` / `pip`。

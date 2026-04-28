@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Callable
 
 from llmwiki.tasks import (
+    arxiv,
     audio,
     chat,
     data_table,
@@ -34,6 +35,7 @@ TASK_REGISTRY: dict[str, TaskFn] = {
     "infographic": infographic.run,
     "data-table": data_table.run,
     "chat": chat.run,
+    "arxiv": arxiv.run,
 }
 
 __all__ = ["TASK_REGISTRY", "TaskFn", "NoteLike"]

@@ -1,5 +1,7 @@
 # LLM-Wiki v2.0
 
+> **中文** · [English](./README.en.md)
+
 个人多模态智能知识库 — Karpathy 风格的"数字第二大脑 OS"。
 
 - **Source**：多源异构碎片资料（网页、语音、图片、PDF）

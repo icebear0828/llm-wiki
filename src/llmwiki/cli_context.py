@@ -80,8 +80,10 @@ _FRONTMATTER_BLOCK = """```yaml
 title: "..."
 source: "https://..."
 created: 2026-04-25T09:05:00+08:00
-tags: [task/audio, task/slides]   # task/* triggers background generation
+language: en                       # optional; passed to vendor `-l` for audio/report/video/infographic/slides/data-table
+tags: [task/audio, task/slides]    # task/* triggers background generation
 status: pending                    # pending | processing | done | error
+arxiv_id: "2401.12345"             # optional; consumed by task/arxiv
 artifacts:                         # written back by watcher
   audio: assets/audio/x.mp3
   slides: assets/slides/x.pdf
@@ -90,7 +92,7 @@ artifacts:                         # written back by watcher
 
 _LAYOUT_BLOCK = """- `raw/` — Inbox (raw PDFs, web clippings, recordings, externally imported notes)
 - `wiki/` — Structured knowledge zone (finalized Markdown with bidirectional links)
-- `assets/{audio,video,slides,report,quiz}/` — Notecraft multimodal artifacts
+- `assets/{audio,video,slides,report,quiz,arxiv}/` — Notecraft multimodal artifacts + arxiv PDFs
 - `vendor/notebooklm/` — git submodule; all generation commands via `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python package (`wikictl` CLI, watcher, ingest, tasks)"""
 

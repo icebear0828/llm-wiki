@@ -5,7 +5,13 @@ from typing import Protocol, cast
 
 from llmwiki import notecraft
 
-from ._common import lookup_notebook_id, out_dir_for, persist_notebook_id, source_from
+from ._common import (
+    language_from,
+    lookup_notebook_id,
+    out_dir_for,
+    persist_notebook_id,
+    source_from,
+)
 from ._types import NoteLike
 
 
@@ -48,7 +54,11 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
         "video",
         source=source_from(note),
         out_dir=out,
-        extra_args=["--format", "explainer", "--style", "whiteboard"],
+        extra_args=[
+            "--format", "explainer",
+            "--style", "whiteboard",
+            "--language", language_from(note),
+        ],
         timeout=1800.0,
         expect_artifact=False,
         pass_output_dir=True,
