@@ -8,6 +8,7 @@ PROVIDER_PREFIX: dict[str, str] = {
     "openai": "openai",
     "anthropic": "anthropic",
     "gemini": "gemini",
+    "openrouter": "openrouter",
 }
 
 # LiteLLM resolves callback strings as files relative to the config yaml dir
