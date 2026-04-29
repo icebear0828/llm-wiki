@@ -78,3 +78,35 @@ def test_reindex_query_upsert_remove_roundtrip(vault: Vault) -> None:
     assert after["count"] == 2
     remaining = index.query("anything", k=5)
     assert all(not h.rel_path.endswith("cats.md") for h in remaining)
+
+
+def test_hybrid_chinese_keyword_recall(vault: Vault) -> None:
+    _write(
+        vault,
+        "rockets.md",
+        "Rockets",
+        "Rockets use thrust from combustion to escape Earth's gravity into orbit.",
+    )
+    _write(
+        vault,
+        "pasta.md",
+        "Pasta",
+        "Pasta is an Italian dish made from wheat flour, eggs, and water.",
+    )
+    _write(
+        vault,
+        "qcd.md",
+        "量子色动力学",
+        "量子色动力学是描述夸克与胶子之间强相互作用的非阿贝尔规范场论。",
+    )
+
+    index = WikiIndex(vault)
+    n = index.reindex_all()
+    assert n == 3
+
+    hits = index.query("量子色动力学", k=3)
+    assert hits, "expected hybrid retrieval to return CN keyword hits"
+    assert hits[0].rel_path.endswith("qcd.md")
+
+    stats = index.stats()
+    assert stats["sparse_count"] == 3

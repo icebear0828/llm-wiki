@@ -8,10 +8,15 @@ from enum import Enum
 from pathlib import Path
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 
 from llmwiki.rag.index import WikiIndex
 from llmwiki.vault import Note, Vault
+
+# PollingObserver (not the default Observer) is used because LabelWatcher
+# already holds an FSEvents non-recursive watch on vault.wiki on macOS, and
+# FSEvents refuses a second non-recursive watch on the same path. Polling at
+# ~1s adds trivial CPU and avoids the conflict.
 
 
 class _Op(Enum):
@@ -64,7 +69,7 @@ class IndexerService:
         self.index = index
         self._debounce = debounce_seconds
         self._queue: queue.Queue[_Event | None] = queue.Queue()
-        self._observer: Observer | None = None
+        self._observer: PollingObserver | None = None
         self._worker: threading.Thread | None = None
         self._stop_event = threading.Event()
 
@@ -72,7 +77,7 @@ class IndexerService:
         self.vault.wiki.mkdir(parents=True, exist_ok=True)
         self._stop_event.clear()
         handler = _IndexHandler(self._queue)
-        self._observer = Observer()
+        self._observer = PollingObserver(timeout=1.0)
         self._observer.schedule(handler, str(self.vault.wiki), recursive=False)
         self._observer.start()
         self._worker = threading.Thread(target=self._run_worker, daemon=True)
