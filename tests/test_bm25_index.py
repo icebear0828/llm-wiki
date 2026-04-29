@@ -56,6 +56,21 @@ def test_tokenize_filters_whitespace_and_punct() -> None:
     assert "world" in tokens
 
 
+def test_tokenize_strips_leading_underscore_and_quotes() -> None:
+    # Tokens like "_foo" or "'hello'" used to be dropped wholesale because
+    # only the first char was inspected. Now leading/trailing punct is
+    # stripped so the meaningful word survives.
+    assert "foo" in _tokenize("_foo")
+    assert "hello" in _tokenize("'hello'")
+    assert "world" in _tokenize('"world"')
+
+
+def test_tokenize_pure_punct_yields_empty() -> None:
+    assert _tokenize("。。。") == []
+    assert _tokenize("!!!") == []
+    assert _tokenize("___") == []
+
+
 def test_upsert_query_returns_hit_with_fields(vault: Vault) -> None:
     p = _write(vault, "qcd.md", "量子色动力学", "量子色动力学描述强相互作用。")
     index = BM25Index(vault)

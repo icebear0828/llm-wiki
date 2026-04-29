@@ -80,6 +80,22 @@ def test_reindex_query_upsert_remove_roundtrip(vault: Vault) -> None:
     assert all(not h.rel_path.endswith("cats.md") for h in remaining)
 
 
+def test_init_does_not_eagerly_load_sparse(vault: Vault) -> None:
+    # Eager bootstrap on every WikiIndex(...) made one-shot CLI commands
+    # (`wikictl rag stats`, etc.) tokenize the whole vault for nothing.
+    # Sparse must lazy-load on first query instead.
+    _write(vault, "alpha.md", "Alpha", "alpha body")
+
+    index = WikiIndex(vault)
+    # Sparse should be empty until something asks for it.
+    assert len(index._sparse._docs) == 0  # type: ignore[attr-defined]
+
+    # Reaching into query should bootstrap from disk on demand.
+    hits = index.query("alpha", k=1)
+    assert hits
+    assert len(index._sparse._docs) >= 1  # type: ignore[attr-defined]
+
+
 def test_hybrid_chinese_keyword_recall(vault: Vault) -> None:
     _write(
         vault,

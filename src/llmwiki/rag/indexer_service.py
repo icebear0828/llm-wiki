@@ -31,8 +31,15 @@ class _Event:
 
 
 class _IndexHandler(FileSystemEventHandler):
-    def __init__(self, q: queue.Queue[_Event | None]) -> None:
+    def __init__(self, q: queue.Queue[_Event | None], watch_root: Path) -> None:
         self._q = q
+        self._root = watch_root.resolve()
+
+    def _under_root(self, path: str) -> bool:
+        try:
+            return Path(path).resolve().is_relative_to(self._root)
+        except (ValueError, OSError):
+            return False
 
     def _enqueue(self, op: _Op, path: str) -> None:
         p = Path(path)
@@ -48,8 +55,13 @@ class _IndexHandler(FileSystemEventHandler):
             self._enqueue(_Op.UPSERT, event.src_path)
 
     def on_moved(self, event: FileSystemEvent) -> None:
-        if not event.is_directory:
-            self._enqueue(_Op.REMOVE, event.src_path)
+        if event.is_directory:
+            return
+        # src is under our watch root by definition. dest may be elsewhere
+        # (e.g. LabelWatcher moving a wiki/ note back to raw/) — only upsert
+        # when it's still under wiki/.
+        self._enqueue(_Op.REMOVE, event.src_path)
+        if self._under_root(event.dest_path):
             self._enqueue(_Op.UPSERT, event.dest_path)
 
     def on_deleted(self, event: FileSystemEvent) -> None:
@@ -76,7 +88,7 @@ class IndexerService:
     def start(self) -> None:
         self.vault.wiki.mkdir(parents=True, exist_ok=True)
         self._stop_event.clear()
-        handler = _IndexHandler(self._queue)
+        handler = _IndexHandler(self._queue, self.vault.wiki)
         self._observer = PollingObserver(timeout=1.0)
         self._observer.schedule(handler, str(self.vault.wiki), recursive=False)
         self._observer.start()

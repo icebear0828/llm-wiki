@@ -166,11 +166,11 @@ def daemon(
         debounce_seconds=cfg.debounce_seconds,
         autopilot_cfg=autopilot_cfg,
     )
-    rag_indexer = _build_rag_indexer(vault)
 
     import threading
 
     shutdown = threading.Event()
+    rag_indexer: object | None = None
 
     def _stop(*_: object) -> None:
         console.print("[yellow]stopping...[/yellow]")
@@ -189,9 +189,14 @@ def daemon(
                 pass
         shutdown.set()
 
+    # Install handlers BEFORE _build_rag_indexer (which can block 30-90s on
+    # fastembed model download during cold start). The closure reads
+    # rag_indexer at signal-delivery time, so the late assignment below is
+    # observed correctly.
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
+    rag_indexer = _build_rag_indexer(vault)
     watcher.start()
     autopilot.start()
     console.print(f"[green]daemon running[/green] vault={cfg.vault_root}")

@@ -231,26 +231,35 @@ class WikiIndex:
         self._dense = _DenseIndex(vault, model_name=model_name)
         self._sparse = BM25Index(vault)
         self.persist_path = self._dense.persist_path
-        # Sparse index lives in memory; eagerly rebuild from wiki/ so one-shot
-        # CLI invocations (`wikictl rag query`) and freshly-spawned gateway
-        # workers don't see an empty sparse half. Cheap: jieba tokenization on
-        # ~hundreds of notes is sub-second.
-        self._sparse.reindex_all()
+        # Sparse index is in-memory only and lazy-loaded: first call to
+        # query() (or an explicit reindex_all()) bootstraps from wiki/. This
+        # avoids paying jieba init + tokenize cost on every WikiIndex
+        # instantiation (CLI one-shots, gateway worker boot, etc.). Watcher
+        # upserts that arrive before bootstrap are dropped on the sparse
+        # side — they'll be re-picked up from disk during bootstrap because
+        # the file already exists by the time the watcher fires.
+        self._sparse_loaded = False
 
     def upsert(self, note: Note) -> None:
         self._dense.upsert(note)
-        self._sparse.upsert(note)
+        if self._sparse_loaded:
+            self._sparse.upsert(note)
 
     def remove(self, path: Path) -> None:
         self._dense.remove(path)
-        self._sparse.remove(path)
+        if self._sparse_loaded:
+            self._sparse.remove(path)
 
     def reindex_all(self) -> int:
         n = self._dense.reindex_all()
         self._sparse.reindex_all()
+        self._sparse_loaded = True
         return n
 
     def query(self, text: str, k: int = 5) -> list[Hit]:
+        if not self._sparse_loaded:
+            self._sparse.reindex_all()
+            self._sparse_loaded = True
         pool = max(k * 2, k)
         dense_hits = self._dense.query(text, k=pool)
         sparse_hits = self._sparse.query(text, k=pool)
