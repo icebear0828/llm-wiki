@@ -67,3 +67,27 @@ def test_indexer_service_remove_on_delete(vault: Vault) -> None:
         assert _wait_until(lambda: any(p.name == "beta.md" for p in fake.removes))
     finally:
         svc.stop()
+
+
+def test_indexer_service_move_out_of_wiki_only_emits_remove(vault: Vault) -> None:
+    # When LabelWatcher moves a note out of wiki/ (e.g. back to raw/), the
+    # indexer must NOT upsert the dest path — it's no longer under our watch
+    # root. Only the remove for the source should fire.
+    note_path = vault.wiki / "gamma.md"
+    note_path.write_text("---\ntitle: Gamma\n---\nbody\n", encoding="utf-8")
+
+    fake = FakeIndex()
+    svc = IndexerService(vault, fake, debounce_seconds=0.05)
+    svc.start()
+    try:
+        dest = vault.raw / "gamma.md"
+        note_path.rename(dest)
+        # Wait long enough for any spurious upsert to also land.
+        assert _wait_until(lambda: any(p.name == "gamma.md" for p in fake.removes))
+        time.sleep(0.5)
+        assert not any(
+            p.parent.name == "raw" or str(p).endswith("raw/gamma.md")
+            for p in fake.upserts
+        ), f"unexpected upsert from out-of-wiki dest: {fake.upserts}"
+    finally:
+        svc.stop()

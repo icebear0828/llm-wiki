@@ -92,6 +92,43 @@ def init(
         )
 
 
+def _build_rag_indexer(vault: object) -> object | None:
+    """Build and return a started IndexerService driving the hybrid index, or
+    None if RAG is disabled in gateway config or initialization fails.
+
+    Cold-start: if Chroma is empty, do a one-shot reindex_all() so the daemon
+    starts useful immediately. Failures here must NOT abort the daemon — the
+    fastembed model download or Chroma init can fail and the rest of the
+    watcher pipeline should still run.
+    """
+    try:
+        from llmwiki.gateway.config import GatewayConfig
+        from llmwiki.rag.index import WikiIndex
+        from llmwiki.rag.indexer_service import IndexerService
+        from llmwiki.vault import Vault as _Vault
+    except ImportError as e:
+        console.print(f"[yellow]rag indexer disabled:[/yellow] {e}")
+        return None
+
+    assert isinstance(vault, _Vault)
+    cfg = GatewayConfig.load(vault.root)
+    if not cfg.rag_enabled:
+        return None
+
+    try:
+        index = WikiIndex(vault)
+        if int(index.stats().get("count", 0)) == 0:
+            n = index.reindex_all()
+            console.print(f"[cyan]rag cold-start reindex:[/cyan] {n} notes")
+        service = IndexerService(vault, index)
+        service.start()
+        console.print("[green]rag indexer started[/green]")
+        return service
+    except Exception as e:
+        console.print(f"[yellow]rag indexer init failed:[/yellow] {e}")
+        return None
+
+
 @app.command()
 def daemon(
     vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
@@ -133,6 +170,7 @@ def daemon(
     import threading
 
     shutdown = threading.Event()
+    rag_indexer: object | None = None
 
     def _stop(*_: object) -> None:
         console.print("[yellow]stopping...[/yellow]")
@@ -144,11 +182,21 @@ def daemon(
             autopilot.stop()
         except Exception:
             pass
+        if rag_indexer is not None:
+            try:
+                rag_indexer.stop()  # type: ignore[attr-defined]
+            except Exception:
+                pass
         shutdown.set()
 
+    # Install handlers BEFORE _build_rag_indexer (which can block 30-90s on
+    # fastembed model download during cold start). The closure reads
+    # rag_indexer at signal-delivery time, so the late assignment below is
+    # observed correctly.
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
+    rag_indexer = _build_rag_indexer(vault)
     watcher.start()
     autopilot.start()
     console.print(f"[green]daemon running[/green] vault={cfg.vault_root}")

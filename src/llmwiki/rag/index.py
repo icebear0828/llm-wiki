@@ -27,7 +27,7 @@ def _make_snippet(body: str, limit: int = 400) -> str:
     return flat[:limit]
 
 
-class WikiIndex:
+class _DenseIndex:
     # Default: multilingual MiniLM (~220MB, 384-dim) — fastembed only ships
     # multilingual-e5-large (2.24GB) for the e5 family, too heavy for MVP.
     # MiniLM covers CN+EN reasonably without the e5 "passage:/query:" prefix.
@@ -180,6 +180,95 @@ class WikiIndex:
                 self._last_updated.isoformat() if self._last_updated else None
             ),
         }
+
+
+def _rrf_fuse(
+    dense: list[Hit],
+    sparse: list[Hit],
+    k: int,
+    *,
+    c: int = 60,
+) -> list[Hit]:
+    by_path: dict[str, Hit] = {}
+    scores: dict[str, float] = {}
+    for rank, hit in enumerate(dense):
+        scores[hit.rel_path] = scores.get(hit.rel_path, 0.0) + 1.0 / (c + rank + 1)
+        by_path[hit.rel_path] = hit
+    for rank, hit in enumerate(sparse):
+        scores[hit.rel_path] = scores.get(hit.rel_path, 0.0) + 1.0 / (c + rank + 1)
+        # Prefer dense Hit metadata when both sides have the doc — its mtime
+        # field round-trips through Chroma. Sparse-only hits use sparse meta.
+        if hit.rel_path not in by_path:
+            by_path[hit.rel_path] = hit
+    fused: list[Hit] = []
+    for rel_path, score in sorted(scores.items(), key=lambda kv: kv[1], reverse=True):
+        h = by_path[rel_path]
+        fused.append(
+            Hit(
+                path=h.path,
+                rel_path=h.rel_path,
+                title=h.title,
+                snippet=h.snippet,
+                score=score,
+            )
+        )
+        if len(fused) >= k:
+            break
+    return fused
+
+
+class WikiIndex:
+    def __init__(
+        self,
+        vault: Vault,
+        *,
+        model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    ) -> None:
+        from llmwiki.rag.bm25_index import BM25Index
+
+        self.vault = vault
+        self.model_name = model_name
+        self._dense = _DenseIndex(vault, model_name=model_name)
+        self._sparse = BM25Index(vault)
+        self.persist_path = self._dense.persist_path
+        # Sparse index is in-memory only and lazy-loaded: first call to
+        # query() (or an explicit reindex_all()) bootstraps from wiki/. This
+        # avoids paying jieba init + tokenize cost on every WikiIndex
+        # instantiation (CLI one-shots, gateway worker boot, etc.). Watcher
+        # upserts that arrive before bootstrap are dropped on the sparse
+        # side — they'll be re-picked up from disk during bootstrap because
+        # the file already exists by the time the watcher fires.
+        self._sparse_loaded = False
+
+    def upsert(self, note: Note) -> None:
+        self._dense.upsert(note)
+        if self._sparse_loaded:
+            self._sparse.upsert(note)
+
+    def remove(self, path: Path) -> None:
+        self._dense.remove(path)
+        if self._sparse_loaded:
+            self._sparse.remove(path)
+
+    def reindex_all(self) -> int:
+        n = self._dense.reindex_all()
+        self._sparse.reindex_all()
+        self._sparse_loaded = True
+        return n
+
+    def query(self, text: str, k: int = 5) -> list[Hit]:
+        if not self._sparse_loaded:
+            self._sparse.reindex_all()
+            self._sparse_loaded = True
+        pool = max(k * 2, k)
+        dense_hits = self._dense.query(text, k=pool)
+        sparse_hits = self._sparse.query(text, k=pool)
+        return _rrf_fuse(dense_hits, sparse_hits, k=k)
+
+    def stats(self) -> dict[str, object]:
+        info = dict(self._dense.stats())
+        info["sparse_count"] = len(self._sparse._docs)
+        return info
 
 
 def get_index(vault: Vault) -> WikiIndex:

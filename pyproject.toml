@@ -18,6 +18,8 @@ dependencies = [
     "python-telegram-bot>=21.6",
     "boto3>=1.42.59",
     "youtube-transcript-api>=1.0",
+    "jieba>=0.42.1",
+    "bm25s>=0.3.7",
 ]
 
 [project.scripts]
