@@ -90,14 +90,37 @@ class _DenseIndex:
             rel = path
         return str(rel)
 
+    def _existing_mtime(self, coll: Collection, rel_id: str) -> float | None:
+        try:
+            existing = coll.get(ids=[rel_id], include=["metadatas"])
+        except Exception:
+            return None
+        metas = existing.get("metadatas") or []
+        if not metas:
+            return None
+        meta = metas[0]
+        if not meta:
+            return None
+        try:
+            return float(meta.get("mtime", 0.0))
+        except (TypeError, ValueError):
+            return None
+
     def upsert(self, note: Note) -> None:
         coll = self._ensure_collection()
-        doc = (note.title or note.path.stem) + "\n\n" + note.body
         rel_id = self._rel_id(note.path)
         try:
             mtime = note.path.stat().st_mtime
         except OSError:
             mtime = 0.0
+        # Mtime short-circuit: skip the (expensive) fastembed encode if the
+        # file content hasn't changed since the last upsert. Saves the bulk of
+        # daemon-startup cost when LabelWatcher.scan_once enqueues every
+        # wiki/*.md and most notes are unchanged.
+        existing = self._existing_mtime(coll, rel_id)
+        if existing is not None and mtime > 0.0 and existing == mtime:
+            return
+        doc = (note.title or note.path.stem) + "\n\n" + note.body
         embedding = self._embed_passages([doc])[0]
         meta: dict[str, Any] = {
             "title": note.title,
@@ -158,16 +181,37 @@ class _DenseIndex:
         return hits
 
     def reindex_all(self) -> int:
-        count = 0
         if not self.vault.wiki.is_dir():
             return 0
+        coll = self._ensure_collection()
+        # Reconcile against disk: collect ids currently on disk, then delete
+        # anything in the collection that isn't there anymore (orphans from
+        # files deleted while daemon was offline).
+        on_disk: list[tuple[Path, str]] = []
         for md in sorted(self.vault.wiki.glob("*.md")):
+            on_disk.append((md, self._rel_id(md)))
+        disk_ids = {rel_id for _, rel_id in on_disk}
+        try:
+            existing = coll.get(include=[])
+            existing_ids = list(existing.get("ids") or [])
+        except Exception:
+            existing_ids = []
+        orphans = [eid for eid in existing_ids if eid not in disk_ids]
+        if orphans:
+            try:
+                coll.delete(ids=orphans)
+            except Exception:
+                pass
+        count = 0
+        for md, _ in on_disk:
             try:
                 note = Note(md)
             except Exception:
                 continue
             self.upsert(note)
             count += 1
+        if orphans:
+            self._last_updated = dt.datetime.now(dt.UTC)
         return count
 
     def stats(self) -> dict[str, object]:
@@ -200,16 +244,22 @@ def _rrf_fuse(
         # field round-trips through Chroma. Sparse-only hits use sparse meta.
         if hit.rel_path not in by_path:
             by_path[hit.rel_path] = hit
+    if not scores:
+        return []
+    # Normalize so the top hit is 1.0 — raw RRF values (~0.033 max for c=60)
+    # are not interpretable for end users. Relative ordering is preserved.
+    max_score = max(scores.values())
     fused: list[Hit] = []
     for rel_path, score in sorted(scores.items(), key=lambda kv: kv[1], reverse=True):
         h = by_path[rel_path]
+        normalized = score / max_score if max_score > 0 else 0.0
         fused.append(
             Hit(
                 path=h.path,
                 rel_path=h.rel_path,
                 title=h.title,
                 snippet=h.snippet,
-                score=score,
+                score=normalized,
             )
         )
         if len(fused) >= k:
