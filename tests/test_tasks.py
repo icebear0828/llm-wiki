@@ -92,7 +92,7 @@ def test_registry_keys() -> None:
             "flashcards",
             "flashcards",
             ["--difficulty", "medium"],
-            "quiz",
+            "flashcards",
             "flashcards",
         ),
     ],

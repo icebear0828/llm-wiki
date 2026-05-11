@@ -35,11 +35,15 @@ assets/
 .cookiejar_*
 
 # Local secrets / config overrides — copy from *.example and fill in.
+# CREDENTIAL CONTAINMENT: git autopilot also blocks these at stage/push time.
+r2.toml
+autopilot.toml
 gateway.toml
 imagen.toml
 im.toml
 .env
-.env.local
+*.env
+.env.*
 config.local.toml
 
 # Local RAG index (user cache, never committed)

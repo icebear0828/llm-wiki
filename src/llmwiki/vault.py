@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import frontmatter
+
+logger = logging.getLogger(__name__)
+
+_NOTEBOOK_INDEX_SCHEMA_VERSION = 2
+_NOTEBOOK_INDEX_SCHEMA_KEY = "_schema_version"
+
+
+def _fsync_dir(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 @dataclass
@@ -50,6 +64,7 @@ class NotebookIndex:
     vault: Vault
     _data: dict[str, str] = field(default_factory=dict)
     _loaded: bool = False
+    _schema_version: int = _NOTEBOOK_INDEX_SCHEMA_VERSION
 
     @property
     def path(self) -> Path:
@@ -65,8 +80,58 @@ class NotebookIndex:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return
-        if isinstance(raw, dict):
-            self._data = {str(k): str(v) for k, v in raw.items() if isinstance(v, str)}
+        if not isinstance(raw, dict):
+            return
+        version_raw = raw.get(_NOTEBOOK_INDEX_SCHEMA_KEY)
+        self._schema_version = version_raw if isinstance(version_raw, int) else 1
+        self._data = {
+            str(k): str(v)
+            for k, v in raw.items()
+            if k != _NOTEBOOK_INDEX_SCHEMA_KEY and isinstance(v, str)
+        }
+        if self._schema_version < _NOTEBOOK_INDEX_SCHEMA_VERSION:
+            self._migrate_legacy_stem_keys()
+
+    def _migrate_legacy_stem_keys(self) -> None:
+        legacy_keys = [key for key in self._data if "/" not in key]
+        new_data = {key: value for key, value in self._data.items() if "/" in key}
+        for stem in legacy_keys:
+            matches: list[Path] = []
+            for root in (self.vault.raw, self.vault.wiki):
+                if not root.is_dir():
+                    continue
+                for md in root.rglob("*.md"):
+                    if md.stem == stem:
+                        matches.append(md)
+            if not matches:
+                logger.warning(
+                    "NotebookIndex migration dropping orphan legacy key %r", stem
+                )
+                continue
+            chosen = matches[0]
+            if len(matches) > 1:
+                logger.warning(
+                    "NotebookIndex migration key %r has %d matches; using %s",
+                    stem,
+                    len(matches),
+                    chosen,
+                )
+            try:
+                rel = chosen.resolve().relative_to(self.vault.root.resolve()).as_posix()
+            except ValueError:
+                logger.warning(
+                    "NotebookIndex migration cannot relativize %s; dropping %r",
+                    chosen,
+                    stem,
+                )
+                continue
+            new_data[rel] = self._data[stem]
+        self._data = new_data
+        self._schema_version = _NOTEBOOK_INDEX_SCHEMA_VERSION
+        try:
+            self.save()
+        except OSError as exc:
+            logger.warning("NotebookIndex migration save failed: %s", exc)
 
     def get(self, key: str) -> str | None:
         self._ensure_loaded()
@@ -75,6 +140,13 @@ class NotebookIndex:
     def set(self, key: str, notebook_id: str) -> None:
         self._ensure_loaded()
         self._data[key] = notebook_id
+
+    def rekey(self, old_key: str, new_key: str) -> None:
+        self._ensure_loaded()
+        value = self._data.pop(old_key, None)
+        if value is None:
+            return
+        self._data[new_key] = value
 
     def items(self) -> list[tuple[str, str]]:
         self._ensure_loaded()
@@ -88,12 +160,17 @@ class NotebookIndex:
         self._ensure_loaded()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        payload = json.dumps(self._data, ensure_ascii=False, indent=2, sort_keys=True)
+        payload_dict: dict[str, int | str] = {
+            _NOTEBOOK_INDEX_SCHEMA_KEY: _NOTEBOOK_INDEX_SCHEMA_VERSION
+        }
+        payload_dict.update(self._data)
+        payload = json.dumps(payload_dict, ensure_ascii=False, indent=2, sort_keys=True)
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(payload)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, self.path)
+        _fsync_dir(self.path.parent)
 
 
 class Note:
@@ -231,3 +308,4 @@ class Note:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, self.path)
+        _fsync_dir(self.path.parent)

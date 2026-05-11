@@ -188,7 +188,7 @@ class _DenseIndex:
         # anything in the collection that isn't there anymore (orphans from
         # files deleted while daemon was offline).
         on_disk: list[tuple[Path, str]] = []
-        for md in sorted(self.vault.wiki.glob("*.md")):
+        for md in sorted(self.vault.wiki.rglob("*.md")):
             on_disk.append((md, self._rel_id(md)))
         disk_ids = {rel_id for _, rel_id in on_disk}
         try:

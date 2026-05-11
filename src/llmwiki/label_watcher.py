@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
+import os
 import queue
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -163,9 +166,51 @@ class LabelWatcher:
                 throttle_key="session_expired",
             )
 
+    def _relpath(self, path: Path) -> str:
+        try:
+            return str(path.resolve().relative_to(self.vault.root.resolve()))
+        except ValueError:
+            return str(path)
+
+    def _write_run_record(self, payload: dict[str, object]) -> None:
+        runs_dir = self.vault.root / ".llmwiki" / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        target = runs_dir / f"{stamp}-{uuid.uuid4().hex[:8]}.json"
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        data = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(data)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, target)
+
     def _process_note(self, note: Note) -> None:
         registry = self._resolve_registry()
         task_specs: list[tuple[str, str | None]] = list(note.task_tags)
+        started_at = dt.datetime.now(dt.UTC)
+        run_record: dict[str, object] = {
+            "note": self._relpath(note.path),
+            "tasks": [{"name": name, "arg": arg} for name, arg in task_specs],
+            "started_at": started_at.isoformat(),
+            "finished_at": None,
+            "status": "processing",
+            "error": None,
+            "artifacts": {},
+            "final_note": None,
+        }
+
+        def finish(status: str, *, error: str | None = None, final_note: Note | None = None) -> None:
+            run_record["finished_at"] = dt.datetime.now(dt.UTC).isoformat()
+            run_record["status"] = status
+            run_record["error"] = error
+            run_record["artifacts"] = {
+                name: self._relpath(path) for name, path in sorted(all_artifacts.items())
+            }
+            if final_note is not None:
+                run_record["final_note"] = self._relpath(final_note.path)
+            self._write_run_record(run_record)
 
         note.set_status("processing")
         note.save()
@@ -221,11 +266,13 @@ class LabelWatcher:
         if session_expired:
             note.set_status("error", error="SessionExpired")
             note.save()
+            finish("error", error="SessionExpired", final_note=note)
             return
 
         if terminal_error is not None and not succeeded:
             note.set_status("error", error=str(terminal_error))
             note.save()
+            finish("error", error=str(terminal_error), final_note=note)
             return
 
         if succeeded:
@@ -240,15 +287,37 @@ class LabelWatcher:
                 if terminal_error is not None:
                     note.set_status("error", error=str(terminal_error))
                 note.save()
+                finish(
+                    "error" if terminal_error is not None else "done",
+                    error=str(terminal_error) if terminal_error is not None else None,
+                    final_note=note,
+                )
                 return
             self._trigger_autopilot_message(f"[Auto] ingest {note.path.name}")
-            new_note = ingest.move_to_wiki(note, self.vault, all_artifacts)
+            try:
+                new_note = ingest.move_to_wiki(note, self.vault, all_artifacts)
+            except ingest.IngestConflict as conflict:
+                note.set_status("conflict", error=f"wiki path exists: {conflict.dest}")
+                note.save()
+                finish("conflict", error=f"wiki path exists: {conflict.dest}", final_note=note)
+                return
+            except Exception as exc:
+                note.set_status("error", error=str(exc))
+                note.save()
+                finish("error", error=str(exc), final_note=note)
+                return
             for name in succeeded:
                 new_note.remove_task(name)
             if terminal_error is not None:
                 new_note.set_status("error", error=str(terminal_error))
             new_note.save()
+            finish(
+                "error" if terminal_error is not None else "done",
+                error=str(terminal_error) if terminal_error is not None else None,
+                final_note=new_note,
+            )
             return
 
         note.set_status("error", error="no tasks succeeded")
         note.save()
+        finish("error", error="no tasks succeeded", final_note=note)

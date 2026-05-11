@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from llmwiki import notecraft
-from llmwiki.tasks import audio
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

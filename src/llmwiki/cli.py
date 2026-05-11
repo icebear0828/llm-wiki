@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
+import logging
 import shutil
 import signal
+import subprocess
 import sys
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import typer
@@ -129,6 +133,29 @@ def _build_rag_indexer(vault: object) -> object | None:
         return None
 
 
+def _configure_daemon_logging(vault_root: Path) -> Path:
+    log_dir = vault_root / ".llmwiki" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "daemon.log"
+    logger = logging.getLogger("llmwiki")
+    logger.setLevel(logging.INFO)
+    for handler in logger.handlers:
+        if getattr(handler, "_llmwiki_daemon_log_path", None) == str(log_path):
+            return log_path
+    handler = RotatingFileHandler(
+        log_path,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    setattr(handler, "_llmwiki_daemon_log_path", str(log_path))
+    logger.addHandler(handler)
+    return log_path
+
+
 @app.command()
 def daemon(
     vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
@@ -166,6 +193,8 @@ def daemon(
         debounce_seconds=cfg.debounce_seconds,
         autopilot_cfg=autopilot_cfg,
     )
+    log_path = _configure_daemon_logging(vault.root)
+    logging.getLogger(__name__).info("daemon starting vault=%s", vault.root)
 
     import threading
 
@@ -200,6 +229,7 @@ def daemon(
     watcher.start()
     autopilot.start()
     console.print(f"[green]daemon running[/green] vault={cfg.vault_root}")
+    console.print(f"[dim]logs[/dim] {log_path.relative_to(vault.root)}")
     # Don't use signal.pause(): SIGCHLD from subprocesses would wake it and
     # let the function return. An Event only set by SIGINT/SIGTERM is correct.
     shutdown.wait()
@@ -348,6 +378,307 @@ def status(
         console.print(f"[dim]no notes found under {root}/raw or {root}/wiki[/dim]")
     else:
         console.print(table)
+
+
+def _iter_note_paths(root: Path, subdir: str) -> list[Path]:
+    base = root / subdir
+    if not base.is_dir():
+        return []
+    return sorted(base.rglob("*.md"))
+
+
+def _agent_docs_check(root: Path) -> dict[str, object]:
+    names = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+    missing: list[str] = []
+    resolved: dict[str, str] = {}
+    for name in names:
+        path = root / name
+        if not path.exists() and not path.is_symlink():
+            missing.append(name)
+            continue
+        try:
+            resolved[name] = str(path.resolve(strict=True).relative_to(root))
+        except RuntimeError:
+            return {
+                "name": "agent_docs",
+                "status": "error",
+                "detail": f"{name} symlink loop",
+            }
+        except FileNotFoundError:
+            return {
+                "name": "agent_docs",
+                "status": "error",
+                "detail": f"{name} broken symlink",
+            }
+        except ValueError:
+            resolved[name] = str(path.resolve(strict=True))
+
+    if missing:
+        return {
+            "name": "agent_docs",
+            "status": "warn",
+            "detail": "missing=" + ",".join(missing),
+        }
+    if len(set(resolved.values())) == 1:
+        return {"name": "agent_docs", "status": "ok", "detail": resolved["AGENTS.md"]}
+    return {
+        "name": "agent_docs",
+        "status": "warn",
+        "detail": "aliases resolve to different targets",
+    }
+
+
+def _doctor_payload(root: Path) -> dict[str, object]:
+    import frontmatter
+
+    checks: list[dict[str, object]] = []
+    required_dirs = ("raw", "wiki", "assets")
+    missing_dirs = [name for name in required_dirs if not (root / name).is_dir()]
+    checks.append(
+        {
+            "name": "vault_layout",
+            "status": "error" if missing_dirs else "ok",
+            "detail": "missing=" + ",".join(missing_dirs) if missing_dirs else str(root),
+        }
+    )
+    checks.append(_agent_docs_check(root))
+
+    status_counts: dict[str, int] = {}
+    raw_notes = _iter_note_paths(root, "raw")
+    wiki_notes = _iter_note_paths(root, "wiki")
+    invalid_paths: list[str] = []
+    pending_tasks = 0
+    processing_tasks = 0
+    error_notes = 0
+    for path in [*raw_notes, *wiki_notes]:
+        try:
+            post = frontmatter.load(str(path))
+        except Exception:
+            try:
+                invalid_paths.append(str(path.relative_to(root)))
+            except ValueError:
+                invalid_paths.append(str(path))
+            continue
+        status_value = str(post.metadata.get("status", "-"))
+        status_counts[status_value] = status_counts.get(status_value, 0) + 1
+        tags = post.metadata.get("tags") or []
+        task_tags = [t for t in tags if isinstance(t, str) and t.startswith("task/")]
+        if task_tags and status_value == "pending":
+            pending_tasks += len(task_tags)
+        if task_tags and status_value == "processing":
+            processing_tasks += len(task_tags)
+        if status_value == "error":
+            error_notes += 1
+
+    checks.append(
+        {
+            "name": "notes",
+            "status": "warn" if invalid_paths else "ok",
+            "detail": (
+                f"raw={len(raw_notes)} wiki={len(wiki_notes)} invalid={len(invalid_paths)}"
+            ),
+            "paths": invalid_paths,
+        }
+    )
+
+    run_files = sorted((root / ".llmwiki" / "runs").glob("*.json"))
+    if not run_files:
+        checks.append({"name": "runs", "status": "ok", "detail": "none"})
+    else:
+        latest = run_files[-1]
+        try:
+            raw_run = json.loads(latest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            checks.append(
+                {
+                    "name": "runs",
+                    "status": "warn",
+                    "detail": f"latest unreadable: {type(exc).__name__}",
+                }
+            )
+        else:
+            run_status = str(raw_run.get("status", "unknown")) if isinstance(raw_run, dict) else "unknown"
+            note = str(raw_run.get("note", "-")) if isinstance(raw_run, dict) else "-"
+            error = raw_run.get("error") if isinstance(raw_run, dict) else None
+            detail = f"latest={run_status} note={note}"
+            if error:
+                detail += f" error={error}"
+            checks.append(
+                {
+                    "name": "runs",
+                    "status": "ok" if run_status == "done" else "warn",
+                    "detail": detail,
+                }
+            )
+
+    try:
+        from llmwiki.rag.index import WikiIndex
+        from llmwiki.vault import Vault
+
+        stats = WikiIndex(Vault(root)).stats()
+        indexed = int(stats.get("count", 0))
+        detail = f"wiki_files={len(wiki_notes)} indexed={indexed}"
+        checks.append(
+            {
+                "name": "rag_index",
+                "status": "ok" if indexed == len(wiki_notes) else "warn",
+                "detail": detail,
+            }
+        )
+    except Exception as exc:
+        checks.append(
+            {
+                "name": "rag_index",
+                "status": "warn",
+                "detail": f"unavailable: {type(exc).__name__}: {exc}",
+            }
+        )
+
+    summary: dict[str, object] = {
+        "root": str(root),
+        "raw_notes": len(raw_notes),
+        "wiki_notes": len(wiki_notes),
+        "pending_tasks": pending_tasks,
+        "processing_tasks": processing_tasks,
+        "error_notes": error_notes,
+        "status_counts": status_counts,
+    }
+    return {"summary": summary, "checks": checks}
+
+
+@app.command()
+def doctor(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    root = _discover_vault_root(vault_path)
+    payload = _doctor_payload(root)
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    summary = payload["summary"]
+    checks = payload["checks"]
+    assert isinstance(summary, dict)
+    assert isinstance(checks, list)
+
+    table = Table(title=f"doctor: {root}")
+    table.add_column("check")
+    table.add_column("status")
+    table.add_column("detail")
+    colors = {"ok": "green", "warn": "yellow", "error": "red"}
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "unknown"))
+        status_value = str(item.get("status", "warn"))
+        detail = str(item.get("detail", ""))
+        color = colors.get(status_value, "white")
+        table.add_row(name, f"[{color}]{status_value}[/{color}]", detail)
+    console.print(table)
+    console.print(
+        "[dim]"
+        f"raw={summary.get('raw_notes')} "
+        f"wiki={summary.get('wiki_notes')} "
+        f"pending_tasks={summary.get('pending_tasks')} "
+        f"processing_tasks={summary.get('processing_tasks')} "
+        f"errors={summary.get('error_notes')}"
+        "[/dim]"
+    )
+
+
+def _test_matrix_checks(
+    *,
+    include_vendor_test: bool = False,
+    include_e2e: bool = False,
+) -> list[tuple[str, list[str]]]:
+    checks = [
+        ("ruff", ["uv", "run", "ruff", "check", "."]),
+        ("unit", ["uv", "run", "pytest", "tests/", "--ignore=tests/e2e"]),
+        ("build", ["uv", "build"]),
+        ("vendor-build", ["npm", "run", "build", "--prefix", "vendor/notebooklm"]),
+    ]
+    if include_vendor_test:
+        checks.append(("vendor-test", ["npm", "test", "--prefix", "vendor/notebooklm"]))
+    if include_e2e:
+        checks.append(("e2e", ["uv", "run", "pytest", "tests/e2e", "-q"]))
+    return checks
+
+
+@app.command("test-matrix")
+def test_matrix(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print checks without running"),
+    include_vendor_test: bool = typer.Option(
+        False,
+        "--vendor-test",
+        help="Also run vendor/notebooklm unit tests",
+    ),
+    include_e2e: bool = typer.Option(
+        False,
+        "--e2e",
+        help="Also run real-service E2E tests",
+    ),
+) -> None:
+    root = _discover_vault_root(vault_path)
+    checks = _test_matrix_checks(
+        include_vendor_test=include_vendor_test,
+        include_e2e=include_e2e,
+    )
+    table = Table(title="test matrix")
+    table.add_column("check")
+    table.add_column("command")
+    for name, argv in checks:
+        table.add_row(name, " ".join(argv))
+    console.print(table)
+    if dry_run:
+        return
+
+    results: list[dict[str, object]] = []
+    overall_ok = True
+    for name, argv in checks:
+        started = datetime.now(timezone.utc)
+        completed = subprocess.run(
+            argv,
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        finished = datetime.now(timezone.utc)
+        ok = completed.returncode == 0
+        overall_ok = overall_ok and ok
+        status = "ok" if ok else "fail"
+        color = "green" if ok else "red"
+        console.print(f"[{color}]{status}[/{color}] {name}")
+        results.append(
+            {
+                "name": name,
+                "argv": argv,
+                "status": status,
+                "returncode": completed.returncode,
+                "started_at": started.isoformat(),
+                "finished_at": finished.isoformat(),
+                "stdout_tail": (completed.stdout or "")[-4000:],
+                "stderr_tail": (completed.stderr or "")[-4000:],
+            }
+        )
+        if not ok:
+            break
+
+    payload = {
+        "status": "ok" if overall_ok else "fail",
+        "checks": results,
+        "include_vendor_test": include_vendor_test,
+        "include_e2e": include_e2e,
+    }
+    out_dir = root / ".llmwiki" / "test-matrix"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "latest.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    if not overall_ok:
+        raise typer.Exit(code=1)
 
 
 gateway_app = typer.Typer(no_args_is_help=True, help="API gateway (LiteLLM proxy + RAG)")
@@ -948,13 +1279,15 @@ def notecraft_gc(
         console.print("[dim]no notebooks in index, nothing to collect[/dim]")
         return
         
-    notes_by_stem: dict[str, Note] = {}
+    notes_by_relpath: dict[str, Note] = {}
     for d in (vault.raw, vault.wiki):
-        if not d.is_dir(): continue
+        if not d.is_dir():
+            continue
         for md in d.rglob("*.md"):
             try:
                 note = Note(md)
-                notes_by_stem[md.stem] = note
+                rel = md.resolve().relative_to(vault.root.resolve()).as_posix()
+                notes_by_relpath[rel] = note
             except Exception:
                 continue
 
@@ -962,12 +1295,12 @@ def notecraft_gc(
     to_delete: list[str] = []
     keys_to_remove: list[str] = []
 
-    for stem, nb_id in items:
-        note = notes_by_stem.get(stem)
+    for key, nb_id in items:
+        note = notes_by_relpath.get(key)
         if note is None:
             # Orphan
             to_delete.append(nb_id)
-            keys_to_remove.append(stem)
+            keys_to_remove.append(key)
             continue
             
         status = note.status
@@ -982,7 +1315,7 @@ def notecraft_gc(
         age_days = (now - mtime) / 86400.0
         if age_days > days:
             to_delete.append(nb_id)
-            keys_to_remove.append(stem)
+            keys_to_remove.append(key)
 
     if not to_delete:
         console.print("[dim]no notebooks eligible for garbage collection[/dim]")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 
 from llmwiki.im import notify
 from llmwiki.im.config import TelegramConfig
+from llmwiki.im.notify import _redact_tg_url
 
 
 class _FakeResponse:
@@ -120,3 +122,46 @@ def test_non_200_does_not_record_state(tmp_path: Path, monkeypatch: pytest.Monke
     notify.push_telegram("x", cfg=cfg, vault_root=tmp_path, throttle_key="k")
     state_file = tmp_path / ".llmwiki" / "notify-state.json"
     assert not state_file.exists()
+
+
+def test_redact_tg_url_helper() -> None:
+    raw = "https://api.telegram.org/bot123:ABCDEF_SECRET/sendMessage"
+    out = _redact_tg_url(raw)
+    assert "123:ABCDEF_SECRET" not in out
+    assert "/bot<REDACTED>/sendMessage" in out
+
+
+def test_httpx_error_log_redacts_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    token = "987654:SUPERSECRETBOTTOKEN"
+
+    class RequestError(Exception):
+        def __init__(self, msg: str, request: object) -> None:
+            super().__init__(msg)
+            self.request = request
+
+    request = SimpleNamespace(
+        url=f"https://api.telegram.org/bot{token}/sendMessage"
+    )
+    err = RequestError(
+        f"Connection error to https://api.telegram.org/bot{token}/sendMessage",
+        request,
+    )
+    fake = _FakeHttpx(raise_exc=err)
+    monkeypatch.setattr(notify, "httpx", fake)
+    cfg = TelegramConfig(bot_token=token, notify_chat_id=42)
+
+    caplog.set_level(logging.ERROR, logger="llmwiki.im.notify")
+
+    notify.push_telegram("x", cfg=cfg, vault_root=tmp_path, throttle_key="k")
+
+    assert caplog.records
+    formatter = logging.Formatter("%(levelname)s %(name)s %(message)s")
+    for record in caplog.records:
+        full = formatter.format(record)
+        assert token not in full
+        assert "SUPERSECRETBOTTOKEN" not in full
+        assert "<REDACTED>" in full

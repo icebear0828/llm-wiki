@@ -41,6 +41,7 @@ packages = ["src/llmwiki"]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = [".claude/worktrees"]
 
 [tool.pytest.ini_options]
 markers = [

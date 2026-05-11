@@ -35,7 +35,8 @@ def test_save_creates_file_and_dir(vault: Vault) -> None:
     target = vault.root / ".llmwiki" / "notebooks.json"
     assert target.is_file()
     data = json.loads(target.read_text(encoding="utf-8"))
-    assert data == {"foo": "nb-123"}
+    assert data.get("_schema_version") == 2
+    assert data.get("foo") == "nb-123"
 
 
 def test_load_roundtrip(vault: Vault) -> None:
@@ -57,7 +58,9 @@ def test_corrupt_json_falls_back_to_empty(vault: Vault) -> None:
     assert idx.get("anything") is None
     idx.set("foo", "nb-9")
     idx.save()
-    assert json.loads(target.read_text(encoding="utf-8")) == {"foo": "nb-9"}
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data.get("_schema_version") == 2
+    assert data.get("foo") == "nb-9"
 
 
 def test_save_atomic_no_tmp_leftover(vault: Vault) -> None:
@@ -99,3 +102,74 @@ def test_note_set_notebook_id_persists(tmp_path: Path) -> None:
     n.save()
     n2 = Note(p)
     assert n2.notebook_id == "nb-xyz"
+
+
+def test_legacy_stem_keys_migrate_to_relpath(vault: Vault) -> None:
+    target = vault.root / ".llmwiki" / "notebooks.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps({"foo": "nb-1", "bar": "nb-2"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (vault.raw / "foo.md").write_text(
+        "---\ntitle: foo\n---\nbody\n", encoding="utf-8"
+    )
+    (vault.wiki / "bar.md").write_text(
+        "---\ntitle: bar\n---\nbody\n", encoding="utf-8"
+    )
+
+    idx = NotebookIndex(vault)
+
+    assert idx.get("raw/foo.md") == "nb-1"
+    assert idx.get("wiki/bar.md") == "nb-2"
+    assert idx.get("foo") is None
+    assert idx.get("bar") is None
+
+    on_disk = json.loads(target.read_text(encoding="utf-8"))
+    assert on_disk.get("_schema_version") == 2
+    assert on_disk.get("raw/foo.md") == "nb-1"
+    assert on_disk.get("wiki/bar.md") == "nb-2"
+    assert "foo" not in on_disk
+    assert "bar" not in on_disk
+
+
+def test_legacy_orphan_stem_keys_dropped(vault: Vault) -> None:
+    target = vault.root / ".llmwiki" / "notebooks.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps({"orphan": "nb-orphan"}), encoding="utf-8")
+
+    idx = NotebookIndex(vault)
+
+    assert idx.get("orphan") is None
+    assert idx.get("raw/orphan.md") is None
+
+
+def test_migration_runs_only_once(vault: Vault) -> None:
+    target = vault.root / ".llmwiki" / "notebooks.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps({"_schema_version": 2, "raw/foo.md": "nb-1"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (vault.raw / "foo.md").write_text(
+        "---\ntitle: foo\n---\n", encoding="utf-8"
+    )
+
+    idx = NotebookIndex(vault)
+
+    assert idx.get("raw/foo.md") == "nb-1"
+    assert idx.get("foo") is None
+
+
+def test_rekey_moves_value(vault: Vault) -> None:
+    idx = NotebookIndex(vault)
+    idx.set("raw/foo.md", "nb-1")
+    idx.rekey("raw/foo.md", "wiki/foo.md")
+    assert idx.get("raw/foo.md") is None
+    assert idx.get("wiki/foo.md") == "nb-1"
+
+
+def test_rekey_noop_when_old_missing(vault: Vault) -> None:
+    idx = NotebookIndex(vault)
+    idx.rekey("raw/foo.md", "wiki/foo.md")
+    assert idx.get("wiki/foo.md") is None

@@ -119,7 +119,8 @@ def test_task_persists_notebook_id(
     idx_path = vault.root / ".llmwiki" / "notebooks.json"
     assert idx_path.is_file()
     data = json.loads(idx_path.read_text(encoding="utf-8"))
-    assert data.get(fname) == "nb-PERSISTED"
+    assert data.get(f"raw/{fname}.md") == "nb-PERSISTED"
+    assert fname not in data
 
 
 def test_persist_skipped_when_notebook_id_missing(

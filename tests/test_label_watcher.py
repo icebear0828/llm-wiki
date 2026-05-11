@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -46,6 +47,30 @@ def test_scan_once_happy(vault: Vault) -> None:
     assert n.status == "done"
     assert n.task_tags == []
     assert "![[assets/fake.bin]]" in n.body
+
+
+def test_scan_once_writes_run_record(vault: Vault) -> None:
+    art = vault.assets / "fake.bin"
+    art.write_bytes(b"x")
+
+    def fake_task(note: Note, *, arg: str | None = None) -> dict[str, Path]:
+        return {"fake": art}
+
+    watcher = LabelWatcher(vault, task_registry={"fake": fake_task})
+    _make_note(vault, tag="fake")
+    watcher.scan_once()
+
+    records = sorted((vault.root / ".llmwiki" / "runs").glob("*.json"))
+    assert len(records) == 1
+    payload = json.loads(records[0].read_text(encoding="utf-8"))
+    assert payload["note"] == "raw/foo.md"
+    assert payload["final_note"] == "wiki/foo.md"
+    assert payload["tasks"] == [{"name": "fake", "arg": None}]
+    assert payload["status"] == "done"
+    assert payload["error"] is None
+    assert payload["artifacts"] == {"fake": "assets/fake.bin"}
+    assert isinstance(payload["started_at"], str)
+    assert isinstance(payload["finished_at"], str)
 
 
 def test_scan_once_session_expired_keeps_tags(vault: Vault) -> None:
@@ -194,6 +219,68 @@ def test_scan_once_chat_stays_in_raw(vault: Vault) -> None:
     assert n.status == "done"
     assert n.task_tags == []
     assert "## Chat: q" in n.body
+
+
+def test_scan_once_ingest_conflict_keeps_raw_and_marks_status(vault: Vault) -> None:
+    (vault.wiki / "foo.md").write_text(
+        "---\ntitle: Curated\nstatus: done\n---\ncurated\n",
+        encoding="utf-8",
+    )
+    art = vault.assets / "fake.bin"
+    art.write_bytes(b"x")
+
+    def fake_task(note: Note, *, arg: str | None = None) -> dict[str, Path]:
+        return {"fake": art}
+
+    watcher = LabelWatcher(vault, task_registry={"fake": fake_task})
+    raw_path = _make_note(vault, tag="fake")
+    watcher.scan_once()
+
+    assert raw_path.exists()
+    n = Note(raw_path)
+    assert "task/fake" in n.tags
+    assert n.status == "conflict"
+    assert "foo.md" in str(n._post.metadata.get("error"))
+    assert (vault.wiki / "foo.md").read_text(encoding="utf-8").endswith("curated\n")
+
+    records = sorted((vault.root / ".llmwiki" / "runs").glob("*.json"))
+    assert len(records) == 1
+    payload = json.loads(records[0].read_text(encoding="utf-8"))
+    assert payload["status"] == "conflict"
+    assert "foo.md" in str(payload["error"])
+    assert payload["final_note"] == "raw/foo.md"
+
+
+def test_scan_once_ingest_error_marks_raw_note_error(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from llmwiki import label_watcher as lw_mod
+
+    art = vault.assets / "fake.bin"
+    art.write_bytes(b"x")
+
+    def fake_task(note: Note, *, arg: str | None = None) -> dict[str, Path]:
+        return {"fake": art}
+
+    def fail_move(note: Note, vault: Vault, artifacts: dict[str, Path]) -> Note:
+        raise OSError("simulated ingest failure")
+
+    monkeypatch.setattr(lw_mod.ingest, "move_to_wiki", fail_move)
+
+    watcher = LabelWatcher(vault, task_registry={"fake": fake_task})
+    raw_path = _make_note(vault, tag="fake")
+    watcher.scan_once()
+
+    assert raw_path.exists()
+    n = Note(raw_path)
+    assert n.status == "error"
+    assert "simulated ingest failure" in str(n._post.metadata.get("error"))
+
+    records = sorted((vault.root / ".llmwiki" / "runs").glob("*.json"))
+    assert len(records) == 1
+    payload = json.loads(records[0].read_text(encoding="utf-8"))
+    assert payload["status"] == "error"
+    assert payload["final_note"] == "raw/foo.md"
 
 
 def test_scan_once_enqueues_when_worker_alive(vault: Vault) -> None:

@@ -36,17 +36,35 @@ def test_lookup_returns_none_when_absent(vault: Vault) -> None:
 def test_lookup_prefers_frontmatter_over_index(vault: Vault) -> None:
     note = _make_note(vault, "fm_wins", extra_meta="notebook_id: nb-from-fm\n")
     idx = NotebookIndex(vault)
-    idx.set("fm_wins", "nb-from-index")
+    idx.set("raw/fm_wins.md", "nb-from-index")
     idx.save()
     assert lookup_notebook_id(note) == "nb-from-fm"
 
 
-def test_lookup_falls_back_to_index_by_stem(vault: Vault) -> None:
+def test_lookup_falls_back_to_index_by_relpath(vault: Vault) -> None:
     note = _make_note(vault, "stemkey")
     idx = NotebookIndex(vault)
-    idx.set("stemkey", "nb-via-index")
+    idx.set("raw/stemkey.md", "nb-via-index")
     idx.save()
     assert lookup_notebook_id(note) == "nb-via-index"
+
+
+def test_lookup_distinguishes_raw_and_wiki_with_same_stem(vault: Vault) -> None:
+    raw_note = _make_note(vault, "twin")
+    wiki_path = vault.wiki / "twin.md"
+    wiki_path.write_text(
+        "---\ntitle: twin\nsource: https://example.com/x\n---\nbody\n",
+        encoding="utf-8",
+    )
+    wiki_note = Note(wiki_path)
+
+    idx = NotebookIndex(vault)
+    idx.set("raw/twin.md", "nb-raw")
+    idx.set("wiki/twin.md", "nb-wiki")
+    idx.save()
+
+    assert lookup_notebook_id(raw_note) == "nb-raw"
+    assert lookup_notebook_id(wiki_note) == "nb-wiki"
 
 
 def test_task_passes_notebook_id_when_present(
@@ -71,7 +89,7 @@ def test_task_passes_notebook_id_when_present(
     monkeypatch.setattr("llmwiki.tasks._common.REPO_ROOT", vault.root, raising=True)
 
     idx = NotebookIndex(vault)
-    idx.set("reuse_me", "nb-existing")
+    idx.set("raw/reuse_me.md", "nb-existing")
     idx.save()
     note = _make_note(vault, "reuse_me")
 

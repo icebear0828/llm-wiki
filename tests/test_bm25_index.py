@@ -134,3 +134,21 @@ def test_reindex_all_skips_non_md(vault: Vault) -> None:
     index = BM25Index(vault)
     n = index.reindex_all()
     assert n == 1
+
+
+def test_reindex_all_includes_nested_wiki_notes(vault: Vault) -> None:
+    nested = vault.wiki / "techniques"
+    nested.mkdir()
+    p = nested / "receive-combining.md"
+    p.write_text(
+        "---\ntitle: 接收合并技术\n---\n接收合并技术用于无线链路可靠性。\n",
+        encoding="utf-8",
+    )
+
+    index = BM25Index(vault)
+    n = index.reindex_all()
+
+    assert n == 1
+    hits = index.query("接收合并", k=3)
+    assert hits
+    assert hits[0].rel_path == "wiki/techniques/receive-combining.md"

@@ -101,7 +101,11 @@ wiki/
 │   ├── slides/
 │   ├── source-add/
 │   └── youtube/
+├── dist/
+│   ├── llmwiki-0.1.0-py3-none-any.whl
+│   └── llmwiki-0.1.0.tar.gz
 ├── docs/
+│   ├── PRODUCT_EVAL.md
 │   ├── SETUP.en.md
 │   └── SETUP.md
 ├── optional-skills/
@@ -133,15 +137,20 @@ wiki/
 │   ├── e2e/
 │   ├── test_arxiv_task.py
 │   ├── test_autopilot_config.py
+│   ├── test_bm25_index.py
 │   ├── test_chat_task.py
 │   ├── test_cli.py
 │   ├── test_cli_context.py
 │   ├── test_common_language.py
+│   ├── test_daemon_indexer_wiring.py
+│   ├── test_daemon_logging.py
 │   ├── test_data_table_task.py
+│   ├── test_doctor.py
 │   ├── test_gateway_cli.py
 │   ├── test_gateway_config.py
 │   ├── test_gemini_middleware.py
 │   ├── test_gen_image_task.py
+│   ├── test_generation_tasks.py
 │   ├── test_git_autopilot.py
 │   ├── test_git_autopilot_push.py
 │   ├── test_im_common.py
@@ -176,10 +185,12 @@ wiki/
 │   ├── test_vault.py
 │   ├── test_video_task.py
 │   └── test_youtube_task.py
+├── token/
+│   └── ai-flight-dashboard/
 ├── wiki/
 │   ├── artifacts/
 │   └── techniques/
-├── AGENTS.md
+├── AGENTS.md.bak-20260511-010022
 ├── CLAUDE.md
 ├── GEMINI.md
 ├── LICENSE
