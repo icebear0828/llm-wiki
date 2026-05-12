@@ -118,7 +118,7 @@ class _DenseIndex:
         # daemon-startup cost when LabelWatcher.scan_once enqueues every
         # wiki/*.md and most notes are unchanged.
         existing = self._existing_mtime(coll, rel_id)
-        if existing is not None and mtime > 0.0 and existing == mtime:
+        if existing is not None and mtime > 0.0 and abs(existing - mtime) <= 1e-6:
             return
         doc = (note.title or note.path.stem) + "\n\n" + note.body
         embedding = self._embed_passages([doc])[0]

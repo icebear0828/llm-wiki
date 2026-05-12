@@ -29,6 +29,18 @@ def test_test_matrix_dry_run_lists_default_gates(tmp_path: Path) -> None:
     assert "uv run pytest tests/e2e -q" not in result.output
 
 
+def test_test_matrix_dry_run_lists_local_e2e_gate(tmp_path: Path) -> None:
+    _make_vault(tmp_path)
+
+    result = CliRunner().invoke(
+        app, ["test-matrix", "--vault", str(tmp_path), "--local-e2e", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "local-e2e" in result.output
+    assert 'uv run pytest tests/e2e -q -m e2e and not live' in result.output
+
+
 def test_test_matrix_writes_summary_json(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -60,3 +72,33 @@ def test_test_matrix_writes_summary_json(
         "build",
         "vendor-build",
     ]
+
+
+def test_test_matrix_local_e2e_summary_json(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _make_vault(tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_run(
+        argv: list[str],
+        *,
+        cwd: Path,
+        capture_output: bool,
+        text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = CliRunner().invoke(
+        app, ["test-matrix", "--vault", str(tmp_path), "--local-e2e"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert ["uv", "run", "pytest", "tests/e2e", "-q", "-m", "e2e and not live"] in calls
+    summary_path = tmp_path / ".llmwiki" / "test-matrix" / "latest.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["include_local_e2e"] is True
+    assert [entry["name"] for entry in payload["checks"]][-1] == "local-e2e"

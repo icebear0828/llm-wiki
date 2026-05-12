@@ -17,6 +17,8 @@ from rich.table import Table
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 context_app = typer.Typer(no_args_is_help=True, help="CLI context file management")
 app.add_typer(context_app, name="context")
+graph_app = typer.Typer(no_args_is_help=True, help="Knowledge graph audits")
+app.add_typer(graph_app, name="graph")
 
 console = Console()
 
@@ -587,8 +589,55 @@ def doctor(
     )
 
 
+@graph_app.command("audit")
+def graph_audit(
+    vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    from llmwiki.graph_audit import audit_vault_graph
+
+    root = _discover_vault_root(vault_path)
+    payload = audit_vault_graph(root)
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    summary = payload["summary"]
+    checks = payload["checks"]
+    assert isinstance(summary, dict)
+    assert isinstance(checks, list)
+
+    table = Table(title=f"graph audit: {root}")
+    table.add_column("check")
+    table.add_column("status")
+    table.add_column("count")
+    colors = {"ok": "green", "warn": "yellow", "error": "red"}
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "unknown"))
+        status_value = str(item.get("status", "warn"))
+        count = str(item.get("count", 0))
+        color = colors.get(status_value, "white")
+        table.add_row(name, f"[{color}]{status_value}[/{color}]", count)
+    console.print(table)
+    console.print(
+        "[dim]"
+        f"wiki={summary.get('wiki_notes')} "
+        f"raw={summary.get('raw_notes')} "
+        f"broken_links={summary.get('broken_links')} "
+        f"broken_embeds={summary.get('broken_embeds')} "
+        f"missing_sources={summary.get('missing_sources')} "
+        f"ambiguous_links={summary.get('ambiguous_links')} "
+        f"orphans={summary.get('orphans')} "
+        f"task_tags_after_done={summary.get('task_tags_after_done')}"
+        "[/dim]"
+    )
+
+
 def _test_matrix_checks(
     *,
+    include_local_e2e: bool = False,
     include_vendor_test: bool = False,
     include_e2e: bool = False,
 ) -> list[tuple[str, list[str]]]:
@@ -598,6 +647,13 @@ def _test_matrix_checks(
         ("build", ["uv", "build"]),
         ("vendor-build", ["npm", "run", "build", "--prefix", "vendor/notebooklm"]),
     ]
+    if include_local_e2e:
+        checks.append(
+            (
+                "local-e2e",
+                ["uv", "run", "pytest", "tests/e2e", "-q", "-m", "e2e and not live"],
+            )
+        )
     if include_vendor_test:
         checks.append(("vendor-test", ["npm", "test", "--prefix", "vendor/notebooklm"]))
     if include_e2e:
@@ -609,6 +665,11 @@ def _test_matrix_checks(
 def test_matrix(
     vault_path: Path | None = typer.Option(None, "--vault", help="Vault root"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print checks without running"),
+    include_local_e2e: bool = typer.Option(
+        False,
+        "--local-e2e",
+        help="Also run local E2E tests that do not require external services",
+    ),
     include_vendor_test: bool = typer.Option(
         False,
         "--vendor-test",
@@ -622,6 +683,7 @@ def test_matrix(
 ) -> None:
     root = _discover_vault_root(vault_path)
     checks = _test_matrix_checks(
+        include_local_e2e=include_local_e2e,
         include_vendor_test=include_vendor_test,
         include_e2e=include_e2e,
     )
@@ -668,6 +730,7 @@ def test_matrix(
     payload = {
         "status": "ok" if overall_ok else "fail",
         "checks": results,
+        "include_local_e2e": include_local_e2e,
         "include_vendor_test": include_vendor_test,
         "include_e2e": include_e2e,
     }

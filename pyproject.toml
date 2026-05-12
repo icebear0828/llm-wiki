@@ -45,6 +45,7 @@ extend-exclude = [".claude/worktrees"]
 
 [tool.pytest.ini_options]
 markers = [
-    "e2e: end-to-end tests requiring real external services",
+    "e2e: end-to-end tests; some require real external services",
+    "live: tests requiring live external services or paid APIs",
     "slow: slow tests (model downloads, heavy embeddings)",
 ]

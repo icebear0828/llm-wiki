@@ -48,6 +48,7 @@ def test_proxy_starts_and_routes_three_protocols(tmp_path: Path) -> None:
         port=PORT,
         master_key=MASTER_KEY,
         request_timeout=30,
+        rag_enabled=False,
         backends={
             "openai": BackendConfig(
                 name="openai",

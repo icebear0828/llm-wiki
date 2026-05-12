@@ -9,6 +9,7 @@ import pytest
 from llmwiki import notecraft
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+pytestmark = [pytest.mark.e2e, pytest.mark.live]
 
 
 @dataclass
@@ -33,7 +34,6 @@ def _list_ok() -> bool:
         return False
 
 
-@pytest.mark.e2e
 def test_list_notebooks_thrice() -> None:
     notecraft._ensure_installed()
     for i in range(3):
@@ -49,7 +49,6 @@ def test_list_notebooks_thrice() -> None:
         )
 
 
-@pytest.mark.e2e
 def test_audio_real(tmp_path: Path) -> None:
     if not _list_ok():
         pytest.skip("notebooklm session unavailable; run `npx notebooklm export-session`")
