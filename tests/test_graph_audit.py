@@ -130,3 +130,40 @@ def test_graph_audit_clean_vault_reports_ok(tmp_path: Path) -> None:
     assert summary["ambiguous_links"] == 0
     assert summary["task_tags_after_done"] == 0
     assert payload["status"] == "ok"
+
+
+def test_graph_audit_warns_on_unresolved_source_wikilink(tmp_path: Path) -> None:
+    _make_vault(tmp_path)
+    (tmp_path / "wiki" / "a.md").write_text(
+        "---\n"
+        "title: A\n"
+        "status: done\n"
+        "sources:\n"
+        "  - '[[missing-source]]'\n"
+        "---\n"
+        "[[b]]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "wiki" / "b.md").write_text(
+        "---\ntitle: B\nstatus: done\nsource: e2e://b\n---\n"
+        "[[A]]\n",
+        encoding="utf-8",
+    )
+
+    payload = _run_graph_audit(tmp_path)
+
+    summary = payload["summary"]
+    assert isinstance(summary, dict)
+    assert summary["missing_sources"] == 1
+    assert payload["status"] == "warn"
+
+    checks = _checks_by_name(payload)
+    assert checks["sources"]["status"] == "warn"
+    assert checks["sources"]["items"] == [
+        {
+            "path": "wiki/a.md",
+            "target": "missing-source",
+            "raw": "[[missing-source]]",
+            "reason": "unresolved_source",
+        }
+    ]

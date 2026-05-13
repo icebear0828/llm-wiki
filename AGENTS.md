@@ -13,7 +13,7 @@ Personal multimodal intelligent knowledge base: Obsidian Vault + Git autopilot +
 
 - `raw/` — Inbox (raw PDFs, web clippings, recordings, externally imported notes)
 - `wiki/` — Structured knowledge zone (finalized Markdown with bidirectional links)
-- `assets/{audio,video,slides,report,quiz,arxiv,youtube}/` — Notecraft artifacts + arxiv PDFs + YouTube transcripts
+- `assets/{audio,video,slides,report,quiz,flashcards,arxiv,youtube}/` — Notecraft artifacts + arxiv PDFs + YouTube transcripts
 - `vendor/notebooklm/` — git submodule; all generation commands via `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python package (`wikictl` CLI, watcher, ingest, tasks)
 
@@ -135,6 +135,7 @@ wiki/
 │   └── llmwiki/
 ├── tests/
 │   ├── e2e/
+│   ├── __init__.py
 │   ├── test_arxiv_task.py
 │   ├── test_autopilot_config.py
 │   ├── test_bm25_index.py
@@ -153,6 +154,8 @@ wiki/
 │   ├── test_generation_tasks.py
 │   ├── test_git_autopilot.py
 │   ├── test_git_autopilot_push.py
+│   ├── test_git_autopilot_safety.py
+│   ├── test_graph_audit.py
 │   ├── test_im_common.py
 │   ├── test_im_config.py
 │   ├── test_im_http.py
@@ -181,6 +184,7 @@ wiki/
 │   ├── test_stt_client.py
 │   ├── test_tasks.py
 │   ├── test_tasks_notebook_persist.py
+│   ├── test_test_matrix.py
 │   ├── test_transcribe_task.py
 │   ├── test_vault.py
 │   ├── test_video_task.py
@@ -190,6 +194,7 @@ wiki/
 ├── wiki/
 │   ├── artifacts/
 │   └── techniques/
+├── AGENTS.md
 ├── AGENTS.md.bak-20260511-010022
 ├── CLAUDE.md
 ├── GEMINI.md

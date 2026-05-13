@@ -63,7 +63,7 @@ content.
 ### Expected results
 
 - audio: `assets/audio/audio_*.mp4` (vendor saves mp4 container, not mp3)
-- flashcards: `assets/quiz/flashcards_*.html`
+- flashcards: `assets/flashcards/flashcards_*.html`
 - slides: `assets/slides/slides_*.pdf`
 - quiz: `assets/quiz/quiz_*.html`
 - infographic: `assets/infographic/infographic_*.png` (vendor poll ≤300s + CDN retry ≤550s, task timeout 900s)

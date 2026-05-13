@@ -30,7 +30,11 @@ def _same_file(a: Path, b: Path) -> bool:
 def move_to_wiki(note: Note, vault: Vault, artifacts: dict[str, Path]) -> Note:
     r2_cfg = R2Config.load(vault.root)
     embeds: list[str] = []
-    
+
+    new_path = vault.wiki / note.path.name
+    if new_path.exists() and not _same_file(note.path, new_path):
+        raise IngestConflict(new_path)
+
     for name, path in artifacts.items():
         url = None
         if r2_cfg.enabled:
@@ -48,7 +52,7 @@ def move_to_wiki(note: Note, vault: Vault, artifacts: dict[str, Path]) -> Note:
                     type(exc).__name__,
                     exc_info=False,
                 )
-                
+
         if url:
             note.add_artifact(name, url)
             embeds.append(f"![{name}]({url})")
@@ -64,12 +68,8 @@ def move_to_wiki(note: Note, vault: Vault, artifacts: dict[str, Path]) -> Note:
             except ValueError:
                 rel = path
             embeds.append(f"![[{rel}]]")
-            
-    note.set_status("done")
 
-    new_path = vault.wiki / note.path.name
-    if new_path.exists() and not _same_file(note.path, new_path):
-        raise IngestConflict(new_path)
+    note.set_status("done")
 
     body = note.body
     body_lines = body.splitlines()

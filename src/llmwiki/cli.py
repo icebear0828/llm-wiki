@@ -37,7 +37,7 @@ _DEFAULT_OBSIDIAN_APP_JSON = """{
 }
 """
 
-_ASSET_DIRS = ("audio", "video", "slides", "report", "quiz")
+_ASSET_DIRS = ("audio", "video", "slides", "report", "quiz", "flashcards")
 
 
 def _discover_vault_root(explicit: Path | None = None) -> Path:

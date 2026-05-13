@@ -17,7 +17,7 @@ def _vault_layout_ok(root: Path) -> bool:
         return False
     if not (root / "wiki").is_dir():
         return False
-    for asset in ("audio", "video", "slides", "report", "quiz"):
+    for asset in ("audio", "video", "slides", "report", "quiz", "flashcards"):
         if not (root / "assets" / asset).is_dir():
             return False
     return (root / ".obsidian" / "app.json").is_file()

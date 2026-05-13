@@ -93,7 +93,7 @@ artifacts:                         # written back by watcher
 
 _LAYOUT_BLOCK = """- `raw/` — Inbox (raw PDFs, web clippings, recordings, externally imported notes)
 - `wiki/` — Structured knowledge zone (finalized Markdown with bidirectional links)
-- `assets/{audio,video,slides,report,quiz,arxiv,youtube}/` — Notecraft artifacts + arxiv PDFs + YouTube transcripts
+- `assets/{audio,video,slides,report,quiz,flashcards,arxiv,youtube}/` — Notecraft artifacts + arxiv PDFs + YouTube transcripts
 - `vendor/notebooklm/` — git submodule; all generation commands via `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python package (`wikictl` CLI, watcher, ingest, tasks)"""
 

@@ -84,6 +84,41 @@ def test_move_to_wiki_same_name_conflict_raises_and_keeps_raw(vault: Vault) -> N
     assert list(vault.root.glob("**/*.tmp")) == []
 
 
+def test_move_to_wiki_conflict_happens_before_r2_upload(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (vault.root / "r2.toml").write_text(
+        """
+[r2]
+enabled = true
+endpoint = "https://x.r2.cloudflarestorage.com"
+access_key = "k"
+secret_key = "s"
+bucket = "b"
+custom_domain = "https://pub.example.com"
+""",
+        encoding="utf-8",
+    )
+    (vault.wiki / "foo.md").write_text(
+        "---\ntitle: Curated\nstatus: done\n---\ncurated\n",
+        encoding="utf-8",
+    )
+    note = _make_raw_note(vault)
+    art = _make_artifact(vault, "audio", "foo.mp3")
+
+    def unexpected_upload(_cfg: object, _path: Path, _root: Path) -> str:
+        pytest.fail("R2 upload must not run when ingest destination conflicts")
+
+    monkeypatch.setattr(ingest, "upload_asset", unexpected_upload)
+
+    with pytest.raises(IngestConflict):
+        move_to_wiki(note, vault, {"audio": art})
+
+    assert art.exists()
+    assert (vault.raw / "foo.md").exists()
+    assert (vault.wiki / "foo.md").read_text(encoding="utf-8").endswith("curated\n")
+
+
 def test_move_to_wiki_unlink_failure_does_not_lose_data(
     vault: Vault, monkeypatch: pytest.MonkeyPatch
 ) -> None:

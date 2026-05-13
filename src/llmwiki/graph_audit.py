@@ -66,8 +66,7 @@ def audit_vault_graph(root: Path) -> dict[str, object]:
                     {"path": note.rel_path, "target": target, "raw": raw}
                 )
 
-        if not _has_source_trace(note):
-            missing_sources.append({"path": note.rel_path})
+        missing_sources.extend(_source_trace_items(note, link_index))
 
         task_tags = [
             tag for tag in _metadata_strings(note.metadata.get("tags")) if tag.startswith("task/")
@@ -210,16 +209,61 @@ def _embed_exists(
     return bool(_resolve_target(link_index, target))
 
 
-def _has_source_trace(note: NoteRecord) -> bool:
+def _source_trace_items(
+    note: NoteRecord, link_index: dict[str, list[NoteRecord]]
+) -> list[AuditItem]:
+    has_trace = False
+    items: list[AuditItem] = []
     for key in _SOURCE_KEYS:
         value = note.metadata.get(key)
-        if isinstance(value, str) and value.strip():
-            return True
-        if isinstance(value, list) and any(str(item).strip() for item in value):
-            return True
-        if isinstance(value, dict) and value:
-            return True
+        if not _source_value_present(value):
+            continue
+        has_trace = True
+        for source in _source_strings(value):
+            for match in _WIKILINK_RE.finditer(source):
+                raw = match.group(0)
+                target = _link_target(match.group(1))
+                if target == "":
+                    continue
+                if not _resolve_target(link_index, target):
+                    items.append(
+                        {
+                            "path": note.rel_path,
+                            "target": target,
+                            "raw": raw,
+                            "reason": "unresolved_source",
+                        }
+                    )
+    if not has_trace:
+        return [{"path": note.rel_path, "reason": "missing_source"}]
+    return items
+
+
+def _source_value_present(value: object) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list | tuple):
+        return any(_source_value_present(item) for item in value)
+    if isinstance(value, dict):
+        return bool(value)
     return False
+
+
+def _source_strings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, list | tuple):
+        strings: list[str] = []
+        for item in value:
+            strings.extend(_source_strings(item))
+        return strings
+    if isinstance(value, dict):
+        strings = []
+        for item in value.values():
+            strings.extend(_source_strings(item))
+        return strings
+    text = str(value).strip()
+    return [text] if text else []
 
 
 def _ambiguous_link_items(link_index: dict[str, list[NoteRecord]]) -> list[AuditItem]:
