@@ -159,14 +159,15 @@ debounce_seconds = 30      # commit 后等多久再 push
 
 ---
 
-## 7. NotebookLM 工作区复用（vault 级 RAG）
+## 7. NotebookLM 工作区复用（主 RAG 后端）
 
 watcher 跑 audio/video/report/slides/quiz/flashcards/infographic/data-table 时，会：
-1. 先查 `<vault>/.llmwiki/notebooks.json`（key = 笔记 stem）
-2. 找到就 `npx notebooklm <cmd> --notebook <id>` 复用，否则新建
-3. 拿到 notebook id 后写回笔记 frontmatter `notebook_id` + 索引文件
+1. 先查 frontmatter `notebook_id`
+2. 没有显式 `notebook_id` 时查 `<vault>/.llmwiki/notebooks.json`（key = vault-relative POSIX path，例如 `raw/foo.md` 或 `wiki/foo.md`）
+3. 找到就 `npx notebooklm <cmd> --notebook <id>` 复用，否则新建
+4. 拿到 notebook id 后写回笔记 frontmatter `notebook_id` + 索引文件
 
-效果：同一篇笔记反复跑生成命令、source 持续累积、上传一次反复用。手动复用某个 notebook：在 frontmatter 加 `notebook_id: <id>` 即可（覆盖索引）。
+效果：同一篇笔记反复跑生成命令、source 持续累积、上传一次反复用。手动复用某个 notebook：在 frontmatter 加 `notebook_id: <id>` 即可（覆盖索引）。本地 RAG 只负责 wiki 快速检索、Gateway context、agent context 和离线 fallback；深度 source-grounded 编排优先交给 NotebookLM。
 
 ---
 

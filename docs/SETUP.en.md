@@ -159,14 +159,15 @@ debounce_seconds = 30      # how long to wait after commit before pushing
 
 ---
 
-## 7. NotebookLM workspace reuse (vault-level RAG)
+## 7. NotebookLM workspace reuse (primary RAG backend)
 
 When the watcher runs audio/video/report/slides/quiz/flashcards/infographic/data-table, it:
-1. Looks up `<vault>/.llmwiki/notebooks.json` (key = note stem)
-2. If found, calls `npx notebooklm <cmd> --notebook <id>` to reuse the workspace; otherwise creates a fresh one
-3. Writes the resulting notebook id back to the note's frontmatter `notebook_id` and to the index file
+1. Looks up the frontmatter `notebook_id`
+2. If there is no explicit `notebook_id`, looks up `<vault>/.llmwiki/notebooks.json` (key = vault-relative POSIX path, such as `raw/foo.md` or `wiki/foo.md`)
+3. If found, calls `npx notebooklm <cmd> --notebook <id>` to reuse the workspace; otherwise creates a fresh one
+4. Writes the resulting notebook id back to the note's frontmatter `notebook_id` and to the index file
 
-Effect: the same note can be re-run repeatedly, sources keep accumulating, and uploads happen once and are reused. To manually reuse a notebook: add `notebook_id: <id>` to the frontmatter (overrides the index).
+Effect: the same note can be re-run repeatedly, sources keep accumulating, and uploads happen once and are reused. To manually reuse a notebook: add `notebook_id: <id>` to the frontmatter (overrides the index). Local RAG is supporting infrastructure for quick wiki lookup, Gateway context, agent context, and offline fallback; deep source-grounded orchestration should prefer NotebookLM.
 
 ---
 

@@ -2,11 +2,14 @@
 
 > [中文](./README.md) · **English**
 
-A personal multimodal intelligent knowledge base — a Karpathy-style "digital second-brain OS."
+A NotebookLM-first personal multimodal knowledge OS. NotebookLM owns the
+primary RAG, source-grounded generation, and notebook-level orchestration;
+LLM-Wiki owns capture, task routing, workspace reuse, artifact persistence,
+Obsidian/wiki, Git, and E2E automation.
 
 - **Source**: heterogeneous fragments from the wild (web pages, voice notes, images, PDFs)
-- **Compiler**: foundation models + autonomous agents
-- **Executable**: a bidirectional-link Markdown network rendered by Obsidian
+- **NotebookLM**: primary RAG / source orchestration / reports, audio, slides, and other generated outputs
+- **LLM-Wiki**: local control plane, persistence, state machine, Obsidian links, and verification layer
 
 ## Quickstart
 
@@ -36,7 +39,9 @@ wiki/   structured knowledge zone (Markdown + bidirectional links)
 assets/ multimodal artifacts (audio/video/slides/flashcards/arxiv PDFs)
 ```
 
-Vault root = repo root = git repo. A background daemon scans frontmatter `task/*` tags, calls [notecraft](vendor/notebooklm/) to generate podcasts / reports / slides / videos / flashcards, lands artifacts on disk, and auto-commits via git autopilot. Push to a private remote is opt-in via `autopilot.toml`.
+Vault root = repo root = git repo. A background daemon scans frontmatter `task/*` tags, calls [notecraft](vendor/notebooklm/) to drive NotebookLM generation for podcasts / reports / slides / videos / flashcards, lands artifacts on disk, and auto-commits via git autopilot. Push to a private remote is opt-in via `autopilot.toml`.
+
+For product boundaries and phased work, see the **[NotebookLM-first Roadmap](docs/NOTEBOOKLM_FIRST_ROADMAP.md)**.
 
 ## Subsystems at a glance
 
@@ -44,11 +49,11 @@ Each subsystem has its own init / start / config file. For full field-by-field d
 
 | Subsystem | File | Purpose |
 |--------|------|------|
-| **Gateway** | `gateway.toml` | LiteLLM proxy that exposes OpenAI / Anthropic / Gemini protocols on a single port (8080) |
+| **Gateway** | `gateway.toml` | LiteLLM proxy plus local wiki/RAG support injection; exposes OpenAI / Anthropic / Gemini protocols on one port (8080) |
 | **IM** | `im.toml` | Telegram bot + HTTP `/ingest` (8081) → `raw/`; slash commands inject `task/*` tags |
 | **Imagen** | `imagen.toml` | Reverse image generation for `task/gen-image`; OpenAI / Gemini backends |
 | **STT** | `stt.toml` | Whisper transcription; voice messages flow through `task/transcribe` into `wiki/` |
-| **Notecraft** | (vendor) | NotebookLM automation; workspace ids persist in `<vault>/.llmwiki/notebooks.json` and are reused across tasks |
+| **Notecraft** | (vendor) | NotebookLM automation; workspace ids persist in `<vault>/.llmwiki/notebooks.json`, are reused across tasks, and form the primary generation path |
 | **Autopilot** | `autopilot.toml` | 5s-debounced `[Auto] commit`; optional auto-push to a private remote (off by default) |
 
 ## Multilingual artifact generation
