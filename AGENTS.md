@@ -7,14 +7,14 @@
 
 ## Project Intent
 
-Personal multimodal intelligent knowledge base: Obsidian Vault + Git autopilot + Notecraft automatic artifact generation.
+NotebookLM-first personal multimodal knowledge OS. NotebookLM owns primary RAG, source-grounded generation, and notebook-level orchestration. LLM-Wiki owns capture, task orchestration, workspace reuse, artifact persistence, Obsidian/wiki, Git autopilot, and verification. Local RAG is supporting infrastructure for quick wiki lookup, Gateway context, agent context, and offline fallback.
 
 ## Vault Layout
 
 - `raw/` — Inbox (raw PDFs, web clippings, recordings, externally imported notes)
 - `wiki/` — Structured knowledge zone (finalized Markdown with bidirectional links)
-- `assets/{audio,video,slides,report,quiz,flashcards,arxiv,youtube}/` — Notecraft artifacts + arxiv PDFs + YouTube transcripts
-- `vendor/notebooklm/` — git submodule; all generation commands via `npx notebooklm <cmd>`
+- `assets/{audio,video,slides,report,quiz,flashcards,arxiv,youtube}/` — NotebookLM/Notecraft artifacts + arxiv PDFs + YouTube transcripts
+- `vendor/notebooklm/` — git submodule; primary RAG/generation commands via `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python package (`wikictl` CLI, watcher, ingest, tasks)
 
 ## Architecture / Data Flow
@@ -105,6 +105,7 @@ wiki/
 │   ├── llmwiki-0.1.0-py3-none-any.whl
 │   └── llmwiki-0.1.0.tar.gz
 ├── docs/
+│   ├── NOTEBOOKLM_FIRST_ROADMAP.md
 │   ├── PRODUCT_EVAL.md
 │   ├── SETUP.en.md
 │   └── SETUP.md

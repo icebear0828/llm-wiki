@@ -86,6 +86,16 @@ def test_agents_md_has_required_sections(tmp_path: Path) -> None:
     assert "Notecraft" in text
 
 
+def test_agents_md_describes_notebooklm_first_boundary(tmp_path: Path) -> None:
+    _make_fixture_vault(tmp_path)
+    cli_context.regenerate(vault_root=tmp_path)
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "NotebookLM-first personal multimodal knowledge OS" in text
+    assert "NotebookLM owns primary RAG" in text
+    assert "LLM-Wiki owns capture, task orchestration, workspace reuse" in text
+    assert "Local RAG is supporting infrastructure" in text
+
+
 def test_agents_md_layout_lists_flashcards_asset_dir(tmp_path: Path) -> None:
     _make_fixture_vault(tmp_path)
     cli_context.regenerate(vault_root=tmp_path)
