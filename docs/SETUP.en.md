@@ -176,7 +176,7 @@ notebook_scope: topic
 notebook_key: topics/ai-agents
 ```
 
-`task/source-add` records sources that have already been added to NotebookLM in `<vault>/.llmwiki/sources.json`: `workspace_key`, `notebook_id`, `source_ref`, local note path, source URL/file, artifact paths, and add time. A later run with the same workspace/notebook/source tuple skips the upstream `source add` call instead of duplicating a source that the local manifest already proves was added.
+`task/source-add` records sources that have already been added to NotebookLM in `<vault>/.llmwiki/sources.json`: `workspace_key`, `notebook_id`, `source_ref`, local note path, source URL/file, artifact paths, and add time. A later run with the same notebook/source tuple skips the upstream `source add` call instead of duplicating a source that the local manifest already proves was added.
 
 Then inspect the local record with `uv run wikictl notecraft list`, `uv run wikictl notecraft status topics/ai-agents`, `uv run wikictl notecraft sources topics/ai-agents`, or `uv run wikictl notecraft verify`.
 

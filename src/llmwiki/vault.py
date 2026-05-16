@@ -140,6 +140,13 @@ def _optional_str(value: object) -> str | None:
     return None
 
 
+def _http_url(value: object) -> str | None:
+    text = _optional_str(value)
+    if text and text.startswith(("http://", "https://")):
+        return text
+    return None
+
+
 def _string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
@@ -556,7 +563,6 @@ def _source_artifact_paths(note: "Note", vault: Vault) -> tuple[str, ...]:
 
 
 def _source_type(note: "Note", source_ref: str, source_file: str | None) -> str:
-    metadata = _metadata(note)
     if _metadata_str(note, "arxiv_id") or "arxiv.org/" in source_ref:
         return "arxiv"
     if _metadata_str(note, "youtube_id") or "youtube.com/" in source_ref or "youtu.be/" in source_ref:
@@ -571,8 +577,6 @@ def _source_type(note: "Note", source_ref: str, source_file: str | None) -> str:
             return "voice-transcript"
         return "file"
     if note.source_url:
-        return "web"
-    if metadata.get("source") or metadata.get("source_url"):
         return "web"
     return "local-note"
 
@@ -740,8 +744,9 @@ class Note:
 
     @property
     def source_url(self) -> str | None:
-        value = self._post.metadata.get("source_url") or self._post.metadata.get("source")
-        return str(value) if value is not None else None
+        return _http_url(self._post.metadata.get("source_url")) or _http_url(
+            self._post.metadata.get("source")
+        )
 
     @property
     def source_file(self) -> Path | None:

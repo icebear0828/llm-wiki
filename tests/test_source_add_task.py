@@ -170,6 +170,40 @@ def test_source_add_prefers_source_url_over_source_label(
     assert record.source_url == "https://example.com/article"
 
 
+def test_source_add_uses_note_text_for_non_url_source_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_vault(tmp_path)
+    captured: dict[str, object] = {}
+    _patch_run(monkeypatch, captured)
+    note_path = tmp_path / "raw" / "im-text.md"
+    note_path.write_text(
+        "---\n"
+        "title: IM Text\n"
+        "source: http\n"
+        "status: pending\n"
+        "---\n"
+        "captured note body\n",
+        encoding="utf-8",
+    )
+
+    source_add.run(Note(note_path), arg="nb-topic")
+
+    src = captured["source"]
+    assert src.url is None
+    assert src.text is not None
+    assert "captured note body" in src.text
+    manifest = SourceManifest.from_vault_root(tmp_path)
+    record = manifest.find_added(
+        workspace_key="raw/im-text.md",
+        notebook_id="nb-topic",
+        source_ref="raw/im-text.md",
+    )
+    assert record is not None
+    assert record.source_url is None
+    assert record.source_type == "local-note"
+
+
 def test_source_add_prefers_local_source_file_when_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
