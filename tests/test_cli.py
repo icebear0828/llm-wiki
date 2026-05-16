@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -332,3 +333,116 @@ def test_youtube_add_invalid_url_exits_nonzero(tmp_path: Path) -> None:
         app, ["youtube", "add", "not-a-youtube-url", "--vault", str(tmp_path)]
     )
     assert result.exit_code != 0
+
+
+def test_notecraft_list_outputs_workspace_json(tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    (tmp_path / "raw" / "paper.md").write_text(
+        "---\n"
+        "title: Paper\n"
+        "source: https://example.com/paper\n"
+        "notebook_scope: topic\n"
+        "notebook_key: topics/ai-agents\n"
+        "notebook_id: nb-topic\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app, ["notecraft", "list", "--json", "--vault", str(tmp_path)]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == [
+        {
+            "key": "topics/ai-agents",
+            "notebook_id": "nb-topic",
+            "scope": "topic",
+            "status": "frontmatter-only",
+            "local_paths": ["raw/paper.md"],
+            "source_refs": ["https://example.com/paper"],
+            "title": "Paper",
+            "indexed_notebook_id": None,
+            "frontmatter_notebook_ids": ["nb-topic"],
+            "last_verified_at": None,
+        }
+    ]
+
+
+def test_notecraft_status_finds_workspace_by_key_json(tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    (tmp_path / "raw" / "paper.md").write_text(
+        "---\n"
+        "title: Paper\n"
+        "notebook_scope: topic\n"
+        "notebook_key: topics/ai-agents\n"
+        "notebook_id: nb-topic\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["notecraft", "status", "topics/ai-agents", "--json", "--vault", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["key"] == "topics/ai-agents"
+    assert payload["notebook_id"] == "nb-topic"
+    assert payload["local_paths"] == ["raw/paper.md"]
+
+
+def test_notecraft_status_missing_workspace_exits_nonzero(tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    result = runner.invoke(
+        app, ["notecraft", "status", "missing", "--json", "--vault", str(tmp_path)]
+    )
+    assert result.exit_code != 0
+    assert "workspace not found" in result.output
+
+
+def test_notecraft_verify_json_reports_local_workspace_errors(tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    idx_path = tmp_path / ".llmwiki" / "notebooks.json"
+    idx_path.parent.mkdir(parents=True, exist_ok=True)
+    idx_path.write_text(
+        json.dumps({"_schema_version": 2, "raw/missing.md": "nb-missing"}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app, ["notecraft", "verify", "--json", "--vault", str(tmp_path)]
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == "error"
+    assert payload["problems"][0]["key"] == "raw/missing.md"
+    assert payload["problems"][0]["status"] == "missing-note"
+
+
+def test_notecraft_verify_json_passes_on_topic_workspace(tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    (tmp_path / "raw" / "paper.md").write_text(
+        "---\n"
+        "title: Paper\n"
+        "notebook_scope: topic\n"
+        "notebook_key: topics/ai-agents\n"
+        "notebook_id: nb-topic\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app, ["notecraft", "verify", "--json", "--vault", str(tmp_path)]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["status"] == "ok"
+    assert payload["problems"] == []

@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 _NOTEBOOK_INDEX_SCHEMA_VERSION = 2
 _NOTEBOOK_INDEX_SCHEMA_KEY = "_schema_version"
+_NOTEBOOK_SCOPE_NOTE = "note"
+_NOTEBOOK_SCOPE_TOPIC = "topic"
 
 
 def _fsync_dir(path: Path) -> None:
@@ -51,6 +53,50 @@ class Vault:
         raise FileNotFoundError(
             f"No vault found from {cur}: need pyproject.toml + raw/ + wiki/"
         )
+
+
+@dataclass(frozen=True)
+class NotebookWorkspace:
+    key: str
+    notebook_id: str
+    scope: str
+    status: str
+    local_paths: tuple[str, ...] = ()
+    source_refs: tuple[str, ...] = ()
+    title: str | None = None
+    indexed_notebook_id: str | None = None
+    frontmatter_notebook_ids: tuple[str, ...] = ()
+    last_verified_at: str | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "notebook_id": self.notebook_id,
+            "scope": self.scope,
+            "status": self.status,
+            "local_paths": list(self.local_paths),
+            "source_refs": list(self.source_refs),
+            "title": self.title,
+            "indexed_notebook_id": self.indexed_notebook_id,
+            "frontmatter_notebook_ids": list(self.frontmatter_notebook_ids),
+            "last_verified_at": self.last_verified_at,
+        }
+
+
+@dataclass
+class _NotebookWorkspaceBuilder:
+    key: str
+    indexed_notebook_id: str | None = None
+    scope: str = _NOTEBOOK_SCOPE_NOTE
+    local_paths: list[str] = field(default_factory=list)
+    source_refs: list[str] = field(default_factory=list)
+    titles: list[str] = field(default_factory=list)
+    frontmatter_notebook_ids: list[str] = field(default_factory=list)
+    last_verified_at: str | None = None
+
+    def add_unique(self, values: list[str], value: str | None) -> None:
+        if value and value not in values:
+            values.append(value)
 
 
 @dataclass
@@ -171,6 +217,180 @@ class NotebookIndex:
             os.fsync(f.fileno())
         os.replace(tmp, self.path)
         _fsync_dir(self.path.parent)
+
+
+def _relpath(path: Path, vault: Vault) -> str | None:
+    try:
+        return Path(path).resolve().relative_to(vault.root.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def _metadata(note: object) -> dict[object, object]:
+    post = getattr(note, "_post", None)
+    meta = getattr(post, "metadata", None)
+    if isinstance(meta, dict):
+        return meta
+    return {}
+
+
+def _metadata_str(note: object, key: str) -> str | None:
+    value = _metadata(note).get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _normalize_workspace_key(value: str) -> str | None:
+    key = value.replace("\\", "/").strip().strip("/")
+    while "//" in key:
+        key = key.replace("//", "/")
+    if not key or key == "." or key.startswith("../") or "/../" in key:
+        return None
+    return key
+
+
+def notebook_workspace_key(note: object, vault: Vault) -> str | None:
+    explicit = _metadata_str(note, "notebook_key")
+    if explicit:
+        normalized = _normalize_workspace_key(explicit)
+        if normalized:
+            return normalized
+    path = getattr(note, "path", None)
+    if path is None:
+        return None
+    return _relpath(Path(path), vault)
+
+
+def _notebook_workspace_scope(note: object, key: str, relpath: str | None) -> str:
+    explicit = _metadata_str(note, "notebook_scope")
+    if explicit == _NOTEBOOK_SCOPE_TOPIC:
+        return _NOTEBOOK_SCOPE_TOPIC
+    if explicit == _NOTEBOOK_SCOPE_NOTE:
+        return _NOTEBOOK_SCOPE_NOTE
+    if relpath is not None and key != relpath:
+        return _NOTEBOOK_SCOPE_TOPIC
+    return _NOTEBOOK_SCOPE_NOTE
+
+
+def _notebook_last_verified_at(note: object) -> str | None:
+    for key in ("notebook_verified_at", "notebook_last_verified_at"):
+        value = _metadata(note).get(key)
+        if value is None:
+            continue
+        if hasattr(value, "isoformat"):
+            text = str(value.isoformat())
+            return text.removesuffix("+00:00") + "Z" if text.endswith("+00:00") else text
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _note_source_refs(note: "Note", vault: Vault) -> list[str]:
+    refs: list[str] = []
+    if note.source_url:
+        refs.append(note.source_url)
+    source_file = _metadata_str(note, "source_file")
+    if source_file:
+        refs.append(source_file)
+    elif note.source_file is not None:
+        rel = _relpath(note.source_file, vault)
+        refs.append(rel if rel else str(note.source_file))
+    return refs
+
+
+def _iter_workspace_notes(vault: Vault) -> list[tuple[str, "Note"]]:
+    notes: list[tuple[str, Note]] = []
+    for root in (vault.raw, vault.wiki):
+        if not root.is_dir():
+            continue
+        for md in sorted(root.rglob("*.md")):
+            rel = _relpath(md, vault)
+            if rel is None:
+                continue
+            try:
+                notes.append((rel, Note(md)))
+            except Exception as exc:
+                logger.warning("cannot read note for workspace inventory %s: %s", md, exc)
+    return notes
+
+
+def _workspace_status(builder: _NotebookWorkspaceBuilder) -> str:
+    frontmatter_ids = set(builder.frontmatter_notebook_ids)
+    indexed_id = builder.indexed_notebook_id
+    if indexed_id and not builder.local_paths:
+        return "missing-note"
+    if indexed_id and frontmatter_ids and any(nb_id != indexed_id for nb_id in frontmatter_ids):
+        return "conflict"
+    if indexed_id and not frontmatter_ids:
+        return "index-only"
+    if not indexed_id and frontmatter_ids:
+        return "frontmatter-only"
+    return "ok"
+
+
+def _active_notebook_id(builder: _NotebookWorkspaceBuilder, status: str) -> str:
+    if status == "conflict" and builder.frontmatter_notebook_ids:
+        return builder.frontmatter_notebook_ids[0]
+    if builder.indexed_notebook_id:
+        return builder.indexed_notebook_id
+    if builder.frontmatter_notebook_ids:
+        return builder.frontmatter_notebook_ids[0]
+    return ""
+
+
+def collect_notebook_workspaces(vault: Vault) -> list[NotebookWorkspace]:
+    index = NotebookIndex(vault)
+    builders: dict[str, _NotebookWorkspaceBuilder] = {}
+    for key, notebook_id in index.items():
+        builders[key] = _NotebookWorkspaceBuilder(
+            key=key,
+            indexed_notebook_id=notebook_id,
+            scope=_NOTEBOOK_SCOPE_TOPIC if key.startswith("topics/") else _NOTEBOOK_SCOPE_NOTE,
+        )
+
+    for relpath, note in _iter_workspace_notes(vault):
+        key = notebook_workspace_key(note, vault)
+        if key is None:
+            continue
+        note_notebook_id = note.notebook_id
+        if key not in builders and not note_notebook_id:
+            continue
+        builder = builders.setdefault(key, _NotebookWorkspaceBuilder(key=key))
+        builder.scope = _notebook_workspace_scope(note, key, relpath)
+        builder.add_unique(builder.local_paths, relpath)
+        builder.add_unique(builder.titles, note.title)
+        builder.add_unique(builder.frontmatter_notebook_ids, note_notebook_id)
+        for source_ref in _note_source_refs(note, vault):
+            builder.add_unique(builder.source_refs, source_ref)
+        verified_at = _notebook_last_verified_at(note)
+        if verified_at and (
+            builder.last_verified_at is None or verified_at > builder.last_verified_at
+        ):
+            builder.last_verified_at = verified_at
+
+    workspaces: list[NotebookWorkspace] = []
+    for builder in builders.values():
+        status = _workspace_status(builder)
+        notebook_id = _active_notebook_id(builder, status)
+        if not notebook_id:
+            continue
+        workspaces.append(
+            NotebookWorkspace(
+                key=builder.key,
+                notebook_id=notebook_id,
+                scope=builder.scope,
+                status=status,
+                local_paths=tuple(builder.local_paths),
+                source_refs=tuple(builder.source_refs),
+                title=builder.titles[0] if builder.titles else None,
+                indexed_notebook_id=builder.indexed_notebook_id,
+                frontmatter_notebook_ids=tuple(builder.frontmatter_notebook_ids),
+                last_verified_at=builder.last_verified_at,
+            )
+        )
+    return sorted(workspaces, key=lambda workspace: workspace.key)
 
 
 class Note:

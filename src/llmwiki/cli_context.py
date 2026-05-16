@@ -85,6 +85,9 @@ tags: [task/audio, task/slides]    # task/* triggers background generation
 status: pending                    # pending | processing | done | error
 arxiv_id: "2401.12345"             # optional; consumed by task/arxiv
 youtube_id: "tj8ggd8UvB0"          # optional; consumed by task/youtube
+notebook_scope: topic              # optional; topic shares one NotebookLM workspace across notes
+notebook_key: topics/ai-agents     # optional; NotebookIndex key when scope is topic
+notebook_id: "abc123"              # optional; explicit NotebookLM workspace override
 artifacts:                         # written back by watcher
   audio: assets/audio/x.mp3
   slides: assets/slides/x.pdf

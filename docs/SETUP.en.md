@@ -169,6 +169,15 @@ When the watcher runs audio/video/report/slides/quiz/flashcards/infographic/data
 
 Effect: the same note can be re-run repeatedly, sources keep accumulating, and uploads happen once and are reused. To manually reuse a notebook: add `notebook_id: <id>` to the frontmatter (overrides the index). Local RAG is supporting infrastructure for quick wiki lookup, Gateway context, agent context, and offline fallback; deep source-grounded orchestration should prefer NotebookLM.
 
+For a topic workspace shared by multiple notes, add:
+
+```yaml
+notebook_scope: topic
+notebook_key: topics/ai-agents
+```
+
+Then inspect the local record with `uv run wikictl notecraft list`, `uv run wikictl notecraft status topics/ai-agents`, or `uv run wikictl notecraft verify`.
+
 ---
 
 ## 8. Multilingual artifacts
@@ -244,5 +253,6 @@ uv run wikictl imagen {init,generate}
 uv run wikictl stt {init,transcribe}
 uv run wikictl autopilot init
 uv run wikictl rag {reindex,query,stats}
+uv run wikictl notecraft {list,status,verify,gc}
 uv run wikictl context regen                         # refresh CLAUDE.md/AGENTS.md/GEMINI.md
 ```

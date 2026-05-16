@@ -169,6 +169,15 @@ watcher 跑 audio/video/report/slides/quiz/flashcards/infographic/data-table 时
 
 效果：同一篇笔记反复跑生成命令、source 持续累积、上传一次反复用。手动复用某个 notebook：在 frontmatter 加 `notebook_id: <id>` 即可（覆盖索引）。本地 RAG 只负责 wiki 快速检索、Gateway context、agent context 和离线 fallback；深度 source-grounded 编排优先交给 NotebookLM。
 
+多篇笔记共享一个 topic workspace 时，在 frontmatter 里加：
+
+```yaml
+notebook_scope: topic
+notebook_key: topics/ai-agents
+```
+
+然后用 `uv run wikictl notecraft list`、`uv run wikictl notecraft status topics/ai-agents` 或 `uv run wikictl notecraft verify` 查看本地记录。
+
 ---
 
 ## 8. 常见错误
@@ -197,5 +206,6 @@ uv run wikictl imagen {init,generate}
 uv run wikictl stt {init,transcribe}
 uv run wikictl autopilot init
 uv run wikictl rag {reindex,query,stats}
+uv run wikictl notecraft {list,status,verify,gc}
 uv run wikictl context regen                          # 刷新 CLAUDE.md/AGENTS.md/GEMINI.md
 ```

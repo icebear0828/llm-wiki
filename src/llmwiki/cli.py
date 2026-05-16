@@ -9,10 +9,14 @@ import sys
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
 from rich.table import Table
+
+if TYPE_CHECKING:
+    from llmwiki.vault import NotebookWorkspace
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 context_app = typer.Typer(no_args_is_help=True, help="CLI context file management")
@@ -1321,6 +1325,114 @@ def youtube_add(
 
 notecraft_app = typer.Typer(no_args_is_help=True, help="NotebookLM automations and workspace management")
 app.add_typer(notecraft_app, name="notecraft")
+
+
+def _workspace_table(workspaces: list["NotebookWorkspace"]) -> Table:
+    table = Table(title="NotebookLM workspaces")
+    table.add_column("key")
+    table.add_column("scope")
+    table.add_column("status")
+    table.add_column("notebook_id")
+    table.add_column("sources", justify="right")
+    table.add_column("verified")
+    for workspace in workspaces:
+        table.add_row(
+            workspace.key,
+            workspace.scope,
+            workspace.status,
+            workspace.notebook_id,
+            str(len(workspace.source_refs)),
+            workspace.last_verified_at or "-",
+        )
+    return table
+
+
+@notecraft_app.command("list")
+def notecraft_list(
+    vault_path: Path | None = typer.Option(None, "--vault"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON for scripts"),
+) -> None:
+    from llmwiki.vault import Vault, collect_notebook_workspaces
+
+    root = _discover_vault_root(vault_path)
+    workspaces = collect_notebook_workspaces(Vault(root))
+    if json_output:
+        console.print(
+            json.dumps([workspace.as_dict() for workspace in workspaces], ensure_ascii=False)
+        )
+        return
+    if not workspaces:
+        console.print("[dim]no NotebookLM workspaces recorded[/dim]")
+        return
+    console.print(_workspace_table(workspaces))
+
+
+@notecraft_app.command("status")
+def notecraft_status(
+    target: str = typer.Argument(..., help="Workspace key or NotebookLM notebook id"),
+    vault_path: Path | None = typer.Option(None, "--vault"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON for scripts"),
+) -> None:
+    from llmwiki.vault import Vault, collect_notebook_workspaces
+
+    root = _discover_vault_root(vault_path)
+    workspaces = collect_notebook_workspaces(Vault(root))
+    matches = [
+        workspace
+        for workspace in workspaces
+        if workspace.key == target or workspace.notebook_id == target
+    ]
+    if not matches:
+        console.print(f"[red]workspace not found:[/red] {target}")
+        raise typer.Exit(code=1)
+    exact = [workspace for workspace in matches if workspace.key == target]
+    selected = exact[0] if exact else matches[0]
+    if json_output:
+        console.print(json.dumps(selected.as_dict(), ensure_ascii=False))
+        return
+
+    console.print(_workspace_table([selected]))
+    if selected.local_paths:
+        console.print("[cyan]local paths[/cyan]")
+        for local_path in selected.local_paths:
+            console.print(f" - {local_path}")
+    if selected.source_refs:
+        console.print("[cyan]source refs[/cyan]")
+        for source_ref in selected.source_refs:
+            console.print(f" - {source_ref}")
+
+
+@notecraft_app.command("verify")
+def notecraft_verify(
+    vault_path: Path | None = typer.Option(None, "--vault"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON for scripts"),
+) -> None:
+    from llmwiki.vault import Vault, collect_notebook_workspaces
+
+    root = _discover_vault_root(vault_path)
+    workspaces = collect_notebook_workspaces(Vault(root))
+    problems = [
+        workspace
+        for workspace in workspaces
+        if workspace.status in ("conflict", "missing-note")
+    ]
+    if json_output:
+        payload: dict[str, object] = {
+            "status": "error" if problems else "ok",
+            "count": len(workspaces),
+            "problems": [workspace.as_dict() for workspace in problems],
+        }
+        console.print(json.dumps(payload, ensure_ascii=False))
+    elif problems:
+        console.print("[red]NotebookLM workspace inventory has problems[/red]")
+        console.print(_workspace_table(problems))
+    else:
+        console.print(
+            f"[green]NotebookLM workspace inventory ok[/green] ({len(workspaces)} workspaces)"
+        )
+
+    if problems:
+        raise typer.Exit(code=1)
 
 
 @notecraft_app.command("gc")
