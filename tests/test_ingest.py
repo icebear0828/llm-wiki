@@ -7,7 +7,7 @@ import pytest
 
 from llmwiki import ingest
 from llmwiki.ingest import IngestConflict, move_to_wiki
-from llmwiki.vault import Note, NotebookIndex, Vault
+from llmwiki.vault import Note, NotebookIndex, SourceManifest, SourceRecord, Vault
 
 
 @pytest.fixture
@@ -160,6 +160,42 @@ def test_move_to_wiki_rekeys_notebook_index(vault: Vault) -> None:
     fresh = NotebookIndex(vault)
     assert fresh.get("raw/foo.md") is None
     assert fresh.get("wiki/foo.md") == "nb-keep"
+
+
+def test_move_to_wiki_rekeys_source_manifest(vault: Vault) -> None:
+    note = _make_raw_note(vault)
+    manifest = SourceManifest(vault)
+    manifest.upsert(
+        SourceRecord(
+            workspace_key="raw/foo.md",
+            notebook_id="nb-keep",
+            source_ref="raw/foo.md",
+            source_type="local-note",
+            local_path="raw/foo.md",
+            added_at="2026-05-16T10:00:00Z",
+            status="added",
+            title="Foo",
+        )
+    )
+    manifest.save()
+
+    art = _make_artifact(vault, "audio", "foo.mp3")
+    move_to_wiki(note, vault, {"audio": art})
+
+    fresh = SourceManifest(vault)
+    assert fresh.find_added(
+        workspace_key="raw/foo.md",
+        notebook_id="nb-keep",
+        source_ref="raw/foo.md",
+    ) is None
+    record = fresh.find_added(
+        workspace_key="wiki/foo.md",
+        notebook_id="nb-keep",
+        source_ref="wiki/foo.md",
+    )
+    assert record is not None
+    assert record.local_path == "wiki/foo.md"
+    assert record.artifact_paths == ("assets/audio/foo.mp3",)
 
 
 def test_move_to_wiki_leaves_unrelated_same_stem_index_key(vault: Vault) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import frontmatter
@@ -14,6 +14,11 @@ _NOTEBOOK_INDEX_SCHEMA_VERSION = 2
 _NOTEBOOK_INDEX_SCHEMA_KEY = "_schema_version"
 _NOTEBOOK_SCOPE_NOTE = "note"
 _NOTEBOOK_SCOPE_TOPIC = "topic"
+_SOURCE_MANIFEST_SCHEMA_VERSION = 1
+_SOURCE_MANIFEST_SCHEMA_KEY = "_schema_version"
+_SOURCE_MANIFEST_RECORDS_KEY = "sources"
+_SOURCE_STATUS_ADDED = "added"
+_VOICE_EXTS = {".flac", ".m4a", ".mp3", ".ogg", ".wav"}
 
 
 def _fsync_dir(path: Path) -> None:
@@ -83,6 +88,36 @@ class NotebookWorkspace:
         }
 
 
+@dataclass(frozen=True)
+class SourceRecord:
+    workspace_key: str
+    notebook_id: str
+    source_ref: str
+    source_type: str
+    local_path: str | None = None
+    added_at: str | None = None
+    status: str = _SOURCE_STATUS_ADDED
+    title: str | None = None
+    source_url: str | None = None
+    source_file: str | None = None
+    artifact_paths: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "workspace_key": self.workspace_key,
+            "notebook_id": self.notebook_id,
+            "source_ref": self.source_ref,
+            "source_type": self.source_type,
+            "local_path": self.local_path,
+            "added_at": self.added_at,
+            "status": self.status,
+            "title": self.title,
+            "source_url": self.source_url,
+            "source_file": self.source_file,
+            "artifact_paths": list(self.artifact_paths),
+        }
+
+
 @dataclass
 class _NotebookWorkspaceBuilder:
     key: str
@@ -97,6 +132,188 @@ class _NotebookWorkspaceBuilder:
     def add_unique(self, values: list[str], value: str | None) -> None:
         if value and value not in values:
             values.append(value)
+
+
+def _optional_str(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
+
+
+def _source_record_from_dict(raw: object) -> SourceRecord | None:
+    if not isinstance(raw, dict):
+        return None
+    workspace_key = _optional_str(raw.get("workspace_key"))
+    notebook_id = _optional_str(raw.get("notebook_id"))
+    source_ref = _optional_str(raw.get("source_ref"))
+    source_type = _optional_str(raw.get("source_type"))
+    if not (workspace_key and notebook_id and source_ref and source_type):
+        return None
+    return SourceRecord(
+        workspace_key=workspace_key,
+        notebook_id=notebook_id,
+        source_ref=source_ref,
+        source_type=source_type,
+        local_path=_optional_str(raw.get("local_path")),
+        added_at=_optional_str(raw.get("added_at")),
+        status=_optional_str(raw.get("status")) or _SOURCE_STATUS_ADDED,
+        title=_optional_str(raw.get("title")),
+        source_url=_optional_str(raw.get("source_url")),
+        source_file=_optional_str(raw.get("source_file")),
+        artifact_paths=_string_tuple(raw.get("artifact_paths")),
+    )
+
+
+@dataclass
+class SourceManifest:
+    """Persisted source provenance for NotebookLM workspace feeds."""
+
+    vault: Vault
+    _records: list[SourceRecord] = field(default_factory=list)
+    _loaded: bool = False
+
+    @property
+    def path(self) -> Path:
+        return self.vault.root / ".llmwiki" / "sources.json"
+
+    @classmethod
+    def from_vault_root(cls, root: Path) -> "SourceManifest":
+        return cls(Vault(Path(root)))
+
+    @classmethod
+    def from_path(cls, path: Path) -> "SourceManifest":
+        source_path = Path(path)
+        return cls(Vault(source_path.parent.parent))
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded:
+            return
+        self._loaded = True
+        if not self.path.is_file():
+            return
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(raw, dict):
+            return
+        records_raw = raw.get(_SOURCE_MANIFEST_RECORDS_KEY)
+        if not isinstance(records_raw, list):
+            return
+        records: list[SourceRecord] = []
+        for item in records_raw:
+            record = _source_record_from_dict(item)
+            if record is not None:
+                records.append(record)
+        self._records = records
+
+    def records(self) -> list[SourceRecord]:
+        self._ensure_loaded()
+        return list(self._records)
+
+    def upsert(self, record: SourceRecord) -> None:
+        self._ensure_loaded()
+        identity = (record.workspace_key, record.notebook_id, record.source_ref)
+        self._records = [
+            existing
+            for existing in self._records
+            if (existing.workspace_key, existing.notebook_id, existing.source_ref)
+            != identity
+        ]
+        self._records.append(record)
+
+    def find_added(
+        self, *, workspace_key: str, notebook_id: str, source_ref: str
+    ) -> SourceRecord | None:
+        self._ensure_loaded()
+        for record in self._records:
+            if (
+                record.workspace_key == workspace_key
+                and record.notebook_id == notebook_id
+                and record.source_ref == source_ref
+                and record.status == _SOURCE_STATUS_ADDED
+            ):
+                return record
+        return None
+
+    def records_for(self, target: str) -> list[SourceRecord]:
+        self._ensure_loaded()
+        return [
+            record
+            for record in self._records
+            if record.workspace_key == target or record.notebook_id == target
+        ]
+
+    def rekey_local_path(
+        self,
+        old_key: str,
+        new_key: str,
+        *,
+        artifact_paths: tuple[str, ...] = (),
+    ) -> bool:
+        self._ensure_loaded()
+        changed = False
+        updated: list[SourceRecord] = []
+        for record in self._records:
+            matched = (
+                record.workspace_key == old_key
+                or record.local_path == old_key
+                or record.source_ref == old_key
+            )
+            if not matched:
+                updated.append(record)
+                continue
+            merged_artifacts = tuple(
+                dict.fromkeys([*record.artifact_paths, *artifact_paths])
+            )
+            updated.append(
+                replace(
+                    record,
+                    workspace_key=new_key if record.workspace_key == old_key else record.workspace_key,
+                    local_path=new_key if record.local_path == old_key else record.local_path,
+                    source_ref=new_key if record.source_ref == old_key else record.source_ref,
+                    artifact_paths=merged_artifacts,
+                )
+            )
+            changed = True
+        self._records = updated
+        return changed
+
+    def save(self) -> None:
+        self._ensure_loaded()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        records = sorted(
+            self._records,
+            key=lambda record: (
+                record.workspace_key,
+                record.notebook_id,
+                record.source_ref,
+            ),
+        )
+        payload = json.dumps(
+            {
+                _SOURCE_MANIFEST_SCHEMA_KEY: _SOURCE_MANIFEST_SCHEMA_VERSION,
+                _SOURCE_MANIFEST_RECORDS_KEY: [
+                    record.as_dict() for record in records
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.path)
+        _fsync_dir(self.path.parent)
 
 
 @dataclass
@@ -298,6 +515,82 @@ def _note_source_refs(note: "Note", vault: Vault) -> list[str]:
         rel = _relpath(note.source_file, vault)
         refs.append(rel if rel else str(note.source_file))
     return refs
+
+
+def _source_file_ref(note: "Note", vault: Vault) -> str | None:
+    source_file = _metadata_str(note, "source_file")
+    if source_file:
+        path = Path(source_file)
+        if path.is_absolute():
+            rel = _relpath(path, vault)
+            return rel if rel else str(path)
+        return path.as_posix()
+    if note.source_file is None:
+        return None
+    rel = _relpath(note.source_file, vault)
+    return rel if rel else str(note.source_file)
+
+
+def _source_artifact_paths(note: "Note", vault: Vault) -> tuple[str, ...]:
+    artifact_paths: list[str] = []
+    for value in note.artifacts.values():
+        if isinstance(value, str) and value.startswith(("http://", "https://")):
+            artifact_paths.append(value)
+            continue
+        path = Path(value)
+        rel = _relpath(path, vault)
+        artifact_paths.append(rel if rel else path.as_posix())
+    return tuple(dict.fromkeys(artifact_paths))
+
+
+def _source_type(note: "Note", source_ref: str, source_file: str | None) -> str:
+    metadata = _metadata(note)
+    if _metadata_str(note, "arxiv_id") or "arxiv.org/" in source_ref:
+        return "arxiv"
+    if _metadata_str(note, "youtube_id") or "youtube.com/" in source_ref or "youtu.be/" in source_ref:
+        return "youtube"
+    if _metadata_str(note, "stt_model"):
+        return "voice-transcript"
+    if source_file:
+        suffix = Path(source_file).suffix.lower()
+        if suffix == ".pdf":
+            return "pdf"
+        if suffix in _VOICE_EXTS:
+            return "voice-transcript"
+        return "file"
+    if note.source_url:
+        return "web"
+    if metadata.get("source") or metadata.get("source_url"):
+        return "web"
+    return "local-note"
+
+
+def source_record_from_note(
+    note: "Note",
+    vault: Vault,
+    *,
+    workspace_key: str,
+    notebook_id: str,
+    added_at: str,
+    status: str = _SOURCE_STATUS_ADDED,
+) -> SourceRecord:
+    local_path = _relpath(note.path, vault)
+    source_file = _source_file_ref(note, vault)
+    source_url = note.source_url
+    source_ref = source_file or source_url or local_path or str(note.path)
+    return SourceRecord(
+        workspace_key=workspace_key,
+        notebook_id=notebook_id,
+        source_ref=source_ref,
+        source_type=_source_type(note, source_ref, source_file),
+        local_path=local_path,
+        added_at=added_at,
+        status=status,
+        title=note.title,
+        source_url=source_url,
+        source_file=source_file,
+        artifact_paths=_source_artifact_paths(note, vault),
+    )
 
 
 def _iter_workspace_notes(vault: Vault) -> list[tuple[str, "Note"]]:

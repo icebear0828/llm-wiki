@@ -176,7 +176,9 @@ notebook_scope: topic
 notebook_key: topics/ai-agents
 ```
 
-然后用 `uv run wikictl notecraft list`、`uv run wikictl notecraft status topics/ai-agents` 或 `uv run wikictl notecraft verify` 查看本地记录。
+`task/source-add` 会把已加入 NotebookLM 的 source 记录到 `<vault>/.llmwiki/sources.json`：包含 `workspace_key`、`notebook_id`、`source_ref`、本地 note 路径、source URL/file、artifact 路径和加入时间。后续同一 workspace/notebook/source 组合再次运行时会直接跳过上游 `source add`，避免 NotebookLM 里重复加同一条本地已证明的 source。
+
+然后用 `uv run wikictl notecraft list`、`uv run wikictl notecraft status topics/ai-agents`、`uv run wikictl notecraft sources topics/ai-agents` 或 `uv run wikictl notecraft verify` 查看本地记录。
 
 ---
 
@@ -206,6 +208,6 @@ uv run wikictl imagen {init,generate}
 uv run wikictl stt {init,transcribe}
 uv run wikictl autopilot init
 uv run wikictl rag {reindex,query,stats}
-uv run wikictl notecraft {list,status,verify,gc}
+uv run wikictl notecraft {list,status,sources,verify,gc}
 uv run wikictl context regen                          # 刷新 CLAUDE.md/AGENTS.md/GEMINI.md
 ```

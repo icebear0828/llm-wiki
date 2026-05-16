@@ -88,6 +88,7 @@ youtube_id: "tj8ggd8UvB0"          # optional; consumed by task/youtube
 notebook_scope: topic              # optional; topic shares one NotebookLM workspace across notes
 notebook_key: topics/ai-agents     # optional; NotebookIndex key when scope is topic
 notebook_id: "abc123"              # optional; explicit NotebookLM workspace override
+source_add_status: added           # optional; source-add provenance status
 artifacts:                         # written back by watcher
   audio: assets/audio/x.mp3
   slides: assets/slides/x.pdf
@@ -97,6 +98,7 @@ artifacts:                         # written back by watcher
 _LAYOUT_BLOCK = """- `raw/` — Inbox (raw PDFs, web clippings, recordings, externally imported notes)
 - `wiki/` — Structured knowledge zone (finalized Markdown with bidirectional links)
 - `assets/{audio,video,slides,report,quiz,flashcards,arxiv,youtube}/` — NotebookLM/Notecraft artifacts + arxiv PDFs + YouTube transcripts
+- `.llmwiki/notebooks.json` + `.llmwiki/sources.json` — NotebookLM workspace index and source provenance manifest
 - `vendor/notebooklm/` — git submodule; primary RAG/generation commands via `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python package (`wikictl` CLI, watcher, ingest, tasks)"""
 

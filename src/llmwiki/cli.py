@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 if TYPE_CHECKING:
-    from llmwiki.vault import NotebookWorkspace
+    from llmwiki.vault import NotebookWorkspace, SourceRecord
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 context_app = typer.Typer(no_args_is_help=True, help="CLI context file management")
@@ -1347,6 +1347,26 @@ def _workspace_table(workspaces: list["NotebookWorkspace"]) -> Table:
     return table
 
 
+def _source_record_table(records: list["SourceRecord"]) -> Table:
+    table = Table(title="NotebookLM source manifest")
+    table.add_column("workspace")
+    table.add_column("type")
+    table.add_column("status")
+    table.add_column("source")
+    table.add_column("local path")
+    table.add_column("added")
+    for record in records:
+        table.add_row(
+            record.workspace_key,
+            record.source_type,
+            record.status,
+            record.source_ref,
+            record.local_path or "-",
+            record.added_at or "-",
+        )
+    return table
+
+
 @notecraft_app.command("list")
 def notecraft_list(
     vault_path: Path | None = typer.Option(None, "--vault"),
@@ -1400,6 +1420,25 @@ def notecraft_status(
         console.print("[cyan]source refs[/cyan]")
         for source_ref in selected.source_refs:
             console.print(f" - {source_ref}")
+
+
+@notecraft_app.command("sources")
+def notecraft_sources(
+    target: str = typer.Argument(..., help="Workspace key or NotebookLM notebook id"),
+    vault_path: Path | None = typer.Option(None, "--vault"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON for scripts"),
+) -> None:
+    from llmwiki.vault import SourceManifest, Vault
+
+    root = _discover_vault_root(vault_path)
+    records = SourceManifest(Vault(root)).records_for(target)
+    if json_output:
+        console.print(json.dumps([record.as_dict() for record in records], ensure_ascii=False))
+        return
+    if not records:
+        console.print(f"[dim]no source records for[/dim] {target}")
+        return
+    console.print(_source_record_table(records))
 
 
 @notecraft_app.command("verify")

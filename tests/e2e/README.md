@@ -31,8 +31,9 @@ Current local coverage:
 
 This is the manual reproducibility doc for issues #38 and #46.
 
-`tests/e2e/test_notecraft_e2e.py` covers `npx notebooklm list` x3 plus a short
-real audio-generation smoke when a NotebookLM session is available. The full 9
+`tests/e2e/test_notecraft_e2e.py` covers `npx notebooklm list` x3, a short
+real audio-generation smoke when a NotebookLM session is available, and
+`source-add` x3 when `LLMWIKI_E2E_SOURCE_ADD_NB_ID` is set. The full 9
 generation task matrix (audio, flashcards, slides, quiz, infographic,
 data-table, source-add, chat, video) hits the live NotebookLM service, takes
 30-60 minutes total, and is kept in the helper script below.
@@ -47,6 +48,13 @@ uv run pytest tests/ --ignore=tests/e2e
 
 Pick an existing notebook id from `npx notebooklm list` for the
 `source-add` and `chat` tasks (they require a live notebook).
+
+For the pytest live source-add gate:
+
+```bash
+LLMWIKI_E2E_SOURCE_ADD_NB_ID=<some-existing-notebook-id> \
+  uv run pytest tests/e2e/test_notecraft_e2e.py::test_source_add_real_thrice -q
+```
 
 ### Run
 

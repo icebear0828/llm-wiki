@@ -7,7 +7,14 @@ from pathlib import Path
 import frontmatter
 
 from llmwiki.r2 import R2Config, upload_asset
-from llmwiki.vault import Note, NotebookIndex, Vault, _fsync_dir
+from llmwiki.vault import (
+    Note,
+    NotebookIndex,
+    SourceManifest,
+    Vault,
+    _fsync_dir,
+    _source_artifact_paths,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,5 +129,12 @@ def move_to_wiki(note: Note, vault: Vault, artifacts: dict[str, Path]) -> Note:
             idx = NotebookIndex(vault)
             idx.rekey(old_rel, new_rel)
             idx.save()
+            manifest = SourceManifest(vault)
+            if manifest.rekey_local_path(
+                old_rel,
+                new_rel,
+                artifact_paths=_source_artifact_paths(note, vault),
+            ):
+                manifest.save()
 
     return Note(new_path)

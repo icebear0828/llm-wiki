@@ -396,6 +396,55 @@ def test_notecraft_status_finds_workspace_by_key_json(tmp_path: Path) -> None:
     assert payload["local_paths"] == ["raw/paper.md"]
 
 
+def test_notecraft_sources_outputs_manifest_records_json(tmp_path: Path) -> None:
+    runner.invoke(app, ["init", "--path", str(tmp_path)])
+    manifest_path = tmp_path / ".llmwiki" / "sources.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "_schema_version": 1,
+                "sources": [
+                    {
+                        "workspace_key": "topics/ai-agents",
+                        "notebook_id": "nb-topic",
+                        "source_ref": "https://example.com/paper",
+                        "source_type": "web",
+                        "local_path": "raw/paper.md",
+                        "added_at": "2026-05-16T10:00:00Z",
+                        "status": "added",
+                        "title": "Paper",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["notecraft", "sources", "topics/ai-agents", "--json", "--vault", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == [
+        {
+            "workspace_key": "topics/ai-agents",
+            "notebook_id": "nb-topic",
+            "source_ref": "https://example.com/paper",
+            "source_type": "web",
+            "local_path": "raw/paper.md",
+            "added_at": "2026-05-16T10:00:00Z",
+            "status": "added",
+            "title": "Paper",
+            "source_url": None,
+            "source_file": None,
+            "artifact_paths": [],
+        }
+    ]
+
+
 def test_notecraft_status_missing_workspace_exits_nonzero(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "--path", str(tmp_path)])
     result = runner.invoke(

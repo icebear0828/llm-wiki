@@ -101,6 +101,8 @@ def test_agents_md_layout_lists_flashcards_asset_dir(tmp_path: Path) -> None:
     cli_context.regenerate(vault_root=tmp_path)
     text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
     assert "assets/{audio,video,slides,report,quiz,flashcards,arxiv,youtube}/" in text
+    assert ".llmwiki/notebooks.json" in text
+    assert ".llmwiki/sources.json" in text
 
 
 def test_task_vocab_has_all_five(tmp_path: Path) -> None:
