@@ -118,7 +118,7 @@ class _DenseIndex:
         # daemon-startup cost when LabelWatcher.scan_once enqueues every
         # wiki/*.md and most notes are unchanged.
         existing = self._existing_mtime(coll, rel_id)
-        if existing is not None and mtime > 0.0 and existing == mtime:
+        if existing is not None and mtime > 0.0 and abs(existing - mtime) <= 1e-6:
             return
         doc = (note.title or note.path.stem) + "\n\n" + note.body
         embedding = self._embed_passages([doc])[0]
@@ -188,7 +188,7 @@ class _DenseIndex:
         # anything in the collection that isn't there anymore (orphans from
         # files deleted while daemon was offline).
         on_disk: list[tuple[Path, str]] = []
-        for md in sorted(self.vault.wiki.glob("*.md")):
+        for md in sorted(self.vault.wiki.rglob("*.md")):
             on_disk.append((md, self._rel_id(md)))
         disk_ids = {rel_id for _, rel_id in on_disk}
         try:

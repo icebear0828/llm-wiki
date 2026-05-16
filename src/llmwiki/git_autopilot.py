@@ -30,6 +30,39 @@ _IGNORE_GLOBS = [
 ]
 
 
+# Stage/push safety:
+# - denylist wins over allowlist;
+# - only expected vault content is auto-staged;
+# - push refuses if credential-shaped paths are already staged.
+_CREDENTIAL_TOPLEVEL_TOMLS: frozenset[str] = frozenset(
+    {"r2.toml", "autopilot.toml", "im.toml", "imagen.toml", "gateway.toml"}
+)
+_ALLOW_DIR_PREFIXES: tuple[str, ...] = ("raw/", "wiki/", "assets/", ".llmwiki/")
+_ALLOW_TOPLEVEL_EXACT: frozenset[str] = frozenset({"pyproject.toml", "uv.lock"})
+_CREDENTIAL_SHAPED_EXTS: frozenset[str] = frozenset(
+    {
+        ".toml",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".env",
+        ".pem",
+        ".key",
+        ".crt",
+        ".cer",
+        ".pfx",
+        ".p12",
+        ".ini",
+        ".cfg",
+        ".txt",
+        ".secret",
+    }
+)
+_CREDENTIAL_TOPLEVEL_TOMLS_LOWER: frozenset[str] = frozenset(
+    name.lower() for name in _CREDENTIAL_TOPLEVEL_TOMLS
+)
+
+
 def _is_ignored(rel: str) -> bool:
     parts = rel.split("/")
     if ".git" in parts:
@@ -46,6 +79,89 @@ def _is_ignored(rel: str) -> bool:
         if fnmatch.fnmatch(rel, pat):
             return True
     return False
+
+
+def _is_denied_path(rel: str) -> bool:
+    rel_l = rel.lower().rstrip("/")
+    parts = rel_l.split("/")
+    name = parts[-1] if parts else rel_l
+
+    if parts and parts[0] == "vendor":
+        return True
+    if rel_l in _CREDENTIAL_TOPLEVEL_TOMLS_LOWER:
+        return True
+    if name == ".env" or name.endswith(".env") or name.startswith(".env."):
+        return True
+
+    dot = name.rfind(".")
+    ext_ok = dot <= 0 or name[dot:] in _CREDENTIAL_SHAPED_EXTS
+    if ext_ok:
+        for needle in ("token", "secret", "credential", "key"):
+            if needle in name:
+                return True
+    return False
+
+
+def _is_allowed_path(rel: str) -> bool:
+    if any(rel.startswith(prefix) for prefix in _ALLOW_DIR_PREFIXES):
+        return True
+    if "/" not in rel:
+        return rel in _ALLOW_TOPLEVEL_EXACT or rel.endswith(".md")
+    return False
+
+
+def _parse_porcelain(out: str) -> list[str]:
+    paths: list[str] = []
+    for line in out.splitlines():
+        if len(line) < 4:
+            continue
+        code = line[:2]
+        if code == "!!":
+            continue
+        rest = line[3:]
+        if " -> " in rest:
+            rest = rest.split(" -> ", 1)[1]
+        if rest.startswith('"') and rest.endswith('"'):
+            try:
+                rest = rest[1:-1].encode("latin-1").decode("unicode_escape")
+            except UnicodeDecodeError:
+                rest = rest[1:-1]
+        paths.append(rest)
+    return paths
+
+
+def _expand_directory_candidates(root: Path, candidates: list[str]) -> list[str]:
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for rel in candidates:
+        rels: list[str]
+        if rel.endswith("/"):
+            found = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard", "--", rel],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            rels = [line for line in found.stdout.splitlines() if line]
+        else:
+            rels = [rel]
+        for item in rels:
+            if item not in seen:
+                expanded.append(item)
+                seen.add(item)
+    return expanded
+
+
+def _filter_stageable(candidates: list[str]) -> tuple[list[str], list[str]]:
+    stageable: list[str] = []
+    denied: list[str] = []
+    for rel in candidates:
+        if _is_denied_path(rel):
+            denied.append(rel)
+        elif _is_allowed_path(rel):
+            stageable.append(rel)
+    return stageable, denied
 
 
 class _Handler(FileSystemEventHandler):
@@ -175,6 +291,27 @@ class GitAutopilot:
             (i.e. you've fetched since the last push). Never use plain `--force`.
         """
         root = str(self.vault.root)
+        try:
+            staged = subprocess.run(
+                ["git", "diff", "--cached", "--name-only"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise PushFailed(
+                f"pre-push staged diff failed: {exc.stderr or exc.returncode}"
+            ) from exc
+        denied_staged = [
+            rel for rel in staged.stdout.splitlines() if rel and _is_denied_path(rel)
+        ]
+        if denied_staged:
+            log.error("git_autopilot push aborted: denied paths staged: %s", denied_staged)
+            raise PushFailed(
+                "refusing to push: credential-shaped paths are staged: "
+                + ", ".join(denied_staged)
+            )
         # Default to HEAD so push works regardless of upstream-tracking state;
         # `git push <remote> HEAD` infers the destination from refs/heads.
         branch = self._cfg.push_branch or "HEAD"
@@ -190,14 +327,46 @@ class GitAutopilot:
 
     def _commit(self, message: str | None = None) -> None:
         msg = message if message is not None else self._read_message()
-        root = str(self.vault.root)
+        root_path = self.vault.root
+        root = str(root_path)
         with self._git_lock:
-            subprocess.run(
-                ["git", "add", "-A"],
+            status = subprocess.run(
+                ["git", "status", "--porcelain=v1", "--untracked-files=normal"],
                 cwd=root,
                 check=True,
                 capture_output=True,
+                text=True,
             )
+            candidates = _expand_directory_candidates(
+                root_path, _parse_porcelain(status.stdout)
+            )
+            stageable, denied = _filter_stageable(candidates)
+            for rel in denied:
+                log.warning("git_autopilot skipped credential-shaped path: %s", rel)
+            if stageable:
+                subprocess.run(
+                    ["git", "add", "--", *stageable],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+            staged = subprocess.run(
+                ["git", "diff", "--cached", "--name-only"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            denied_staged = [
+                rel for rel in staged.stdout.splitlines() if rel and _is_denied_path(rel)
+            ]
+            if denied_staged:
+                subprocess.run(
+                    ["git", "restore", "--staged", "--", *denied_staged],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
             cached = subprocess.run(
                 ["git", "diff", "--cached", "--quiet"],
                 cwd=root,

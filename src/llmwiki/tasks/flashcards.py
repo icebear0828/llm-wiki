@@ -9,7 +9,7 @@ from ._types import NoteLike
 
 
 def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
-    out = out_dir_for("quiz")
+    out = out_dir_for("flashcards")
     result = notecraft.run(
         "flashcards",
         source=source_from(note),

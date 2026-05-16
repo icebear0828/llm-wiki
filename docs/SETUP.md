@@ -159,14 +159,26 @@ debounce_seconds = 30      # commit 后等多久再 push
 
 ---
 
-## 7. NotebookLM 工作区复用（vault 级 RAG）
+## 7. NotebookLM 工作区复用（主 RAG 后端）
 
 watcher 跑 audio/video/report/slides/quiz/flashcards/infographic/data-table 时，会：
-1. 先查 `<vault>/.llmwiki/notebooks.json`（key = 笔记 stem）
-2. 找到就 `npx notebooklm <cmd> --notebook <id>` 复用，否则新建
-3. 拿到 notebook id 后写回笔记 frontmatter `notebook_id` + 索引文件
+1. 先查 frontmatter `notebook_id`
+2. 没有显式 `notebook_id` 时查 `<vault>/.llmwiki/notebooks.json`（key = vault-relative POSIX path，例如 `raw/foo.md` 或 `wiki/foo.md`）
+3. 找到就 `npx notebooklm <cmd> --notebook <id>` 复用，否则新建
+4. 拿到 notebook id 后写回笔记 frontmatter `notebook_id` + 索引文件
 
-效果：同一篇笔记反复跑生成命令、source 持续累积、上传一次反复用。手动复用某个 notebook：在 frontmatter 加 `notebook_id: <id>` 即可（覆盖索引）。
+效果：同一篇笔记反复跑生成命令、source 持续累积、上传一次反复用。手动复用某个 notebook：在 frontmatter 加 `notebook_id: <id>` 即可（覆盖索引）。本地 RAG 只负责 wiki 快速检索、Gateway context、agent context 和离线 fallback；深度 source-grounded 编排优先交给 NotebookLM。
+
+多篇笔记共享一个 topic workspace 时，在 frontmatter 里加：
+
+```yaml
+notebook_scope: topic
+notebook_key: topics/ai-agents
+```
+
+`task/source-add` 会把已加入 NotebookLM 的 source 记录到 `<vault>/.llmwiki/sources.json`：包含 `workspace_key`、`notebook_id`、`source_ref`、本地 note 路径、source URL/file、artifact 路径和加入时间。后续同一 notebook/source 组合再次运行时会直接跳过上游 `source add`，避免 NotebookLM 里重复加同一条本地已证明的 source。
+
+然后用 `uv run wikictl notecraft list`、`uv run wikictl notecraft status topics/ai-agents`、`uv run wikictl notecraft sources topics/ai-agents` 或 `uv run wikictl notecraft verify` 查看本地记录。
 
 ---
 
@@ -196,5 +208,6 @@ uv run wikictl imagen {init,generate}
 uv run wikictl stt {init,transcribe}
 uv run wikictl autopilot init
 uv run wikictl rag {reindex,query,stats}
+uv run wikictl notecraft {list,status,sources,verify,gc}
 uv run wikictl context regen                          # 刷新 CLAUDE.md/AGENTS.md/GEMINI.md
 ```

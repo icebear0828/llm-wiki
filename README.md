@@ -2,11 +2,11 @@
 
 > **中文** · [English](./README.en.md)
 
-个人多模态智能知识库 — Karpathy 风格的"数字第二大脑 OS"。
+NotebookLM-first 个人多模态知识库 OS。NotebookLM 负责主 RAG、source-grounded 生成和 notebook 内编排；LLM-Wiki 负责采集、任务编排、workspace 复用、产物沉淀、Obsidian/wiki、Git 和 E2E 自动化。
 
 - **Source**：多源异构碎片资料（网页、语音、图片、PDF）
-- **Compiler**：底层大模型 + 自治 Agent
-- **Executable**：Obsidian 承载的 Markdown 双向链接网络
+- **NotebookLM**：主 RAG / source 编排 / 报告、音频、幻灯片等生成
+- **LLM-Wiki**：本地控制面、持久化、状态机、Obsidian 双链和验证层
 
 ## Quickstart
 
@@ -36,7 +36,9 @@ wiki/   结构知识区（Markdown + 双向链接）
 assets/ 多模态产物（音/视频/PPT/抽认卡）
 ```
 
-Vault 根 = 项目根 = git 仓库。后台守护进程扫 frontmatter 的 `task/*` 标签，自动调 [notecraft](vendor/notebooklm/) 生成播客 / 报告 / 幻灯片 / 视频 / 抽认卡，落盘后自动 git commit；按需走 `autopilot.toml` 推到私仓。
+Vault 根 = 项目根 = git 仓库。后台守护进程扫 frontmatter 的 `task/*` 标签，自动调 [notecraft](vendor/notebooklm/) 驱动 NotebookLM 生成播客 / 报告 / 幻灯片 / 视频 / 抽认卡，落盘后自动 git commit；按需走 `autopilot.toml` 推到私仓。
+
+详细产品边界和阶段规划见 **[NotebookLM-first Roadmap](docs/NOTEBOOKLM_FIRST_ROADMAP.md)**。
 
 ## 子系统一览
 
@@ -44,11 +46,11 @@ Vault 根 = 项目根 = git 仓库。后台守护进程扫 frontmatter 的 `task
 
 | 子系统 | 文件 | 作用 |
 |--------|------|------|
-| **Gateway** | `gateway.toml` | LiteLLM proxy，统一暴露 OpenAI/Anthropic/Gemini 三家协议入口（端口 8080） |
+| **Gateway** | `gateway.toml` | LiteLLM proxy + 本地 wiki/RAG 辅助注入，统一暴露 OpenAI/Anthropic/Gemini 三家协议入口（端口 8080） |
 | **IM** | `im.toml` | Telegram bot + HTTP `/ingest`（8081）→ `raw/`；斜杠命令注入 `task/*` 标签 |
 | **Imagen** | `imagen.toml` | `task/gen-image` 反向生图；OpenAI / Gemini 两种 backend |
 | **STT** | `stt.toml` | Whisper 转录；语音消息走 `task/transcribe` 落到 `wiki/` |
-| **Notecraft** | (vendor) | NotebookLM 自动化；workspace id 持久化进 `<vault>/.llmwiki/notebooks.json`，跨任务复用 |
+| **Notecraft** | (vendor) | NotebookLM 自动化；workspace id 持久化进 `<vault>/.llmwiki/notebooks.json`，跨任务复用，是主生成路径 |
 | **Autopilot** | `autopilot.toml` | 5s debounce → `[Auto] commit`；可选自动 push 到私仓（默认关） |
 
 ## 状态

@@ -7,14 +7,15 @@
 
 ## Project Intent
 
-Personal multimodal intelligent knowledge base: Obsidian Vault + Git autopilot + Notecraft automatic artifact generation.
+NotebookLM-first personal multimodal knowledge OS. NotebookLM owns primary RAG, source-grounded generation, and notebook-level orchestration. LLM-Wiki owns capture, task orchestration, workspace reuse, artifact persistence, Obsidian/wiki, Git autopilot, and verification. Local RAG is supporting infrastructure for quick wiki lookup, Gateway context, agent context, and offline fallback.
 
 ## Vault Layout
 
 - `raw/` — Inbox (raw PDFs, web clippings, recordings, externally imported notes)
 - `wiki/` — Structured knowledge zone (finalized Markdown with bidirectional links)
-- `assets/{audio,video,slides,report,quiz,arxiv,youtube}/` — Notecraft artifacts + arxiv PDFs + YouTube transcripts
-- `vendor/notebooklm/` — git submodule; all generation commands via `npx notebooklm <cmd>`
+- `assets/{audio,video,slides,report,quiz,flashcards,arxiv,youtube}/` — NotebookLM/Notecraft artifacts + arxiv PDFs + YouTube transcripts
+- `.llmwiki/notebooks.json` + `.llmwiki/sources.json` — NotebookLM workspace index and source provenance manifest
+- `vendor/notebooklm/` — git submodule; primary RAG/generation commands via `npx notebooklm <cmd>`
 - `src/llmwiki/` — Python package (`wikictl` CLI, watcher, ingest, tasks)
 
 ## Architecture / Data Flow
@@ -58,6 +59,10 @@ tags: [task/audio, task/slides]    # task/* triggers background generation
 status: pending                    # pending | processing | done | error
 arxiv_id: "2401.12345"             # optional; consumed by task/arxiv
 youtube_id: "tj8ggd8UvB0"          # optional; consumed by task/youtube
+notebook_scope: topic              # optional; topic shares one NotebookLM workspace across notes
+notebook_key: topics/ai-agents     # optional; NotebookIndex key when scope is topic
+notebook_id: "abc123"              # optional; explicit NotebookLM workspace override
+source_add_status: added           # optional; source-add provenance status
 artifacts:                         # written back by watcher
   audio: assets/audio/x.mp3
   slides: assets/slides/x.pdf
@@ -101,7 +106,12 @@ wiki/
 │   ├── slides/
 │   ├── source-add/
 │   └── youtube/
+├── dist/
+│   ├── llmwiki-0.1.0-py3-none-any.whl
+│   └── llmwiki-0.1.0.tar.gz
 ├── docs/
+│   ├── NOTEBOOKLM_FIRST_ROADMAP.md
+│   ├── PRODUCT_EVAL.md
 │   ├── SETUP.en.md
 │   └── SETUP.md
 ├── optional-skills/
@@ -131,19 +141,27 @@ wiki/
 │   └── llmwiki/
 ├── tests/
 │   ├── e2e/
+│   ├── __init__.py
 │   ├── test_arxiv_task.py
 │   ├── test_autopilot_config.py
+│   ├── test_bm25_index.py
 │   ├── test_chat_task.py
 │   ├── test_cli.py
 │   ├── test_cli_context.py
 │   ├── test_common_language.py
+│   ├── test_daemon_indexer_wiring.py
+│   ├── test_daemon_logging.py
 │   ├── test_data_table_task.py
+│   ├── test_doctor.py
 │   ├── test_gateway_cli.py
 │   ├── test_gateway_config.py
 │   ├── test_gemini_middleware.py
 │   ├── test_gen_image_task.py
+│   ├── test_generation_tasks.py
 │   ├── test_git_autopilot.py
 │   ├── test_git_autopilot_push.py
+│   ├── test_git_autopilot_safety.py
+│   ├── test_graph_audit.py
 │   ├── test_im_common.py
 │   ├── test_im_config.py
 │   ├── test_im_http.py
@@ -157,6 +175,7 @@ wiki/
 │   ├── test_litellm_config_with_rag.py
 │   ├── test_notebook_index.py
 │   ├── test_notebook_lookup.py
+│   ├── test_notebook_workspaces.py
 │   ├── test_notecraft.py
 │   ├── test_notecraft_parse.py
 │   ├── test_notify.py
@@ -168,18 +187,23 @@ wiki/
 │   ├── test_rag_indexer_service.py
 │   ├── test_smoke.py
 │   ├── test_source_add_task.py
+│   ├── test_source_manifest.py
 │   ├── test_stt_cli.py
 │   ├── test_stt_client.py
 │   ├── test_tasks.py
 │   ├── test_tasks_notebook_persist.py
+│   ├── test_test_matrix.py
 │   ├── test_transcribe_task.py
 │   ├── test_vault.py
 │   ├── test_video_task.py
 │   └── test_youtube_task.py
+├── token/
+│   └── ai-flight-dashboard/
 ├── wiki/
 │   ├── artifacts/
 │   └── techniques/
 ├── AGENTS.md
+├── AGENTS.md.bak-20260511-010022
 ├── CLAUDE.md
 ├── GEMINI.md
 ├── LICENSE

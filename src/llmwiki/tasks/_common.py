@@ -4,19 +4,24 @@ from pathlib import Path
 
 from llmwiki import notecraft
 from llmwiki.notecraft import NoteSource
-from llmwiki.vault import NotebookIndex, Vault
+from llmwiki.vault import NotebookIndex, Vault, notebook_workspace_key
 
 from ._types import NoteLike
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+def _note_index_key(note: NoteLike, vault: Vault) -> str | None:
+    return notebook_workspace_key(note, vault)
+
+
 def lookup_notebook_id(note: NoteLike) -> str | None:
     """Find a previously-recorded NotebookLM workspace id for this note.
 
     Resolution order: frontmatter `notebook_id` (explicit override) →
-    vault NotebookIndex keyed by `note.path.stem`. Returns None when
-    nothing is recorded yet — the caller will create a fresh notebook.
+    vault NotebookIndex keyed by `notebook_key` when present, otherwise by the
+    vault-relative POSIX path. Returns None when nothing is recorded yet — the
+    caller will create a fresh notebook.
     """
     post = getattr(note, "_post", None)
     if post is not None:
@@ -29,7 +34,10 @@ def lookup_notebook_id(note: NoteLike) -> str | None:
         vault = Vault.discover(Path(note.path).parent)
     except FileNotFoundError:
         return None
-    return NotebookIndex(vault).get(Path(note.path).stem)
+    key = _note_index_key(note, vault)
+    if key is None:
+        return None
+    return NotebookIndex(vault).get(key)
 
 
 def persist_notebook_id(note: NoteLike, notebook_id: str | None) -> None:
@@ -50,8 +58,11 @@ def persist_notebook_id(note: NoteLike, notebook_id: str | None) -> None:
         vault = Vault.discover(Path(note.path).parent)
     except FileNotFoundError:
         return
+    key = _note_index_key(note, vault)
+    if key is None:
+        return
     idx = NotebookIndex(vault)
-    idx.set(Path(note.path).stem, notebook_id)
+    idx.set(key, notebook_id)
     idx.save()
 
 

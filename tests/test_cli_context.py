@@ -10,7 +10,7 @@ from llmwiki import cli_context
 def _make_fixture_vault(root: Path) -> None:
     (root / "raw").mkdir(parents=True)
     (root / "wiki").mkdir(parents=True)
-    for sub in ("audio", "video", "slides", "report", "quiz"):
+    for sub in ("audio", "video", "slides", "report", "quiz", "flashcards"):
         (root / "assets" / sub).mkdir(parents=True)
     (root / "src" / "llmwiki").mkdir(parents=True)
     (root / "raw" / "sample.md").write_text("---\ntitle: x\n---\n", encoding="utf-8")
@@ -84,6 +84,25 @@ def test_agents_md_has_required_sections(tmp_path: Path) -> None:
     assert "![[" in text
     assert "LabelWatcher" in text
     assert "Notecraft" in text
+
+
+def test_agents_md_describes_notebooklm_first_boundary(tmp_path: Path) -> None:
+    _make_fixture_vault(tmp_path)
+    cli_context.regenerate(vault_root=tmp_path)
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "NotebookLM-first personal multimodal knowledge OS" in text
+    assert "NotebookLM owns primary RAG" in text
+    assert "LLM-Wiki owns capture, task orchestration, workspace reuse" in text
+    assert "Local RAG is supporting infrastructure" in text
+
+
+def test_agents_md_layout_lists_flashcards_asset_dir(tmp_path: Path) -> None:
+    _make_fixture_vault(tmp_path)
+    cli_context.regenerate(vault_root=tmp_path)
+    text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "assets/{audio,video,slides,report,quiz,flashcards,arxiv,youtube}/" in text
+    assert ".llmwiki/notebooks.json" in text
+    assert ".llmwiki/sources.json" in text
 
 
 def test_task_vocab_has_all_five(tmp_path: Path) -> None:

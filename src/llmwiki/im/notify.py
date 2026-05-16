@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -11,6 +12,11 @@ import httpx
 from .config import TelegramConfig
 
 log = logging.getLogger(__name__)
+_TG_TOKEN_RE = re.compile(r"/bot[^/\s]+/")
+
+
+def _redact_tg_url(value: str) -> str:
+    return _TG_TOKEN_RE.sub("/bot<REDACTED>/", value)
 
 
 def push_telegram(
@@ -63,7 +69,17 @@ def push_telegram(
             timeout=10,
         )
     except Exception as e:  # noqa: BLE001 — best-effort notify
-        log.error("push_telegram failed: %s", e)
+        request = getattr(e, "request", None)
+        request_url = ""
+        if request is not None:
+            request_url = _redact_tg_url(str(getattr(request, "url", "")))
+        log.error(
+            "push_telegram failed: type=%s err=%s url=%s",
+            type(e).__name__,
+            _redact_tg_url(str(e)),
+            request_url,
+            exc_info=False,
+        )
         return
 
     if getattr(response, "status_code", 0) != 200:

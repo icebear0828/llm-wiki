@@ -86,7 +86,7 @@ class BM25Index:
         # Tokenize all notes outside the lock, then swap in atomically.
         new_docs: dict[str, list[str]] = {}
         new_meta: dict[str, dict[str, Any]] = {}
-        for md in sorted(self.vault.wiki.glob("*.md")):
+        for md in sorted(self.vault.wiki.rglob("*.md")):
             try:
                 note = Note(md)
             except Exception:
