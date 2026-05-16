@@ -110,8 +110,7 @@ def run(note: NoteLike, *, arg: str | None = None) -> dict[str, Path]:
                 notebook_id=notebook_id,
                 added_at=added_at,
             )
-            existing = manifest.find_added(
-                workspace_key=record.workspace_key,
+            existing = manifest.find_added_source(
                 notebook_id=record.notebook_id,
                 source_ref=record.source_ref,
             )

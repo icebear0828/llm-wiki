@@ -219,12 +219,11 @@ class SourceManifest:
 
     def upsert(self, record: SourceRecord) -> None:
         self._ensure_loaded()
-        identity = (record.workspace_key, record.notebook_id, record.source_ref)
+        identity = (record.notebook_id, record.source_ref)
         self._records = [
             existing
             for existing in self._records
-            if (existing.workspace_key, existing.notebook_id, existing.source_ref)
-            != identity
+            if (existing.notebook_id, existing.source_ref) != identity
         ]
         self._records.append(record)
 
@@ -236,6 +235,19 @@ class SourceManifest:
             if (
                 record.workspace_key == workspace_key
                 and record.notebook_id == notebook_id
+                and record.source_ref == source_ref
+                and record.status == _SOURCE_STATUS_ADDED
+            ):
+                return record
+        return None
+
+    def find_added_source(
+        self, *, notebook_id: str, source_ref: str
+    ) -> SourceRecord | None:
+        self._ensure_loaded()
+        for record in self._records:
+            if (
+                record.notebook_id == notebook_id
                 and record.source_ref == source_ref
                 and record.status == _SOURCE_STATUS_ADDED
             ):
@@ -728,7 +740,7 @@ class Note:
 
     @property
     def source_url(self) -> str | None:
-        value = self._post.metadata.get("source") or self._post.metadata.get("source_url")
+        value = self._post.metadata.get("source_url") or self._post.metadata.get("source")
         return str(value) if value is not None else None
 
     @property

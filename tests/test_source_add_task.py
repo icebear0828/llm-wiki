@@ -136,6 +136,40 @@ def test_source_add_records_manifest_after_success(
     assert reloaded._post.metadata["source_add_status"] == "added"
 
 
+def test_source_add_prefers_source_url_over_source_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_vault(tmp_path)
+    captured: dict[str, object] = {}
+    _patch_run(monkeypatch, captured)
+    note_path = tmp_path / "raw" / "im-url.md"
+    note_path.write_text(
+        "---\n"
+        "title: IM URL\n"
+        "source: http\n"
+        "source_url: https://example.com/article\n"
+        "notebook_scope: topic\n"
+        "notebook_key: topics/im\n"
+        "status: pending\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+
+    source_add.run(Note(note_path), arg="nb-topic")
+
+    src = captured["source"]
+    assert src.url == "https://example.com/article"
+    manifest = SourceManifest.from_vault_root(tmp_path)
+    record = manifest.find_added(
+        workspace_key="topics/im",
+        notebook_id="nb-topic",
+        source_ref="https://example.com/article",
+    )
+    assert record is not None
+    assert record.source_url == "https://example.com/article"
+
+
 def test_source_add_prefers_local_source_file_when_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -164,6 +198,49 @@ def test_source_add_prefers_local_source_file_when_present(
     src = captured["source"]
     assert src.url is None
     assert src.file == tmp_path / "assets" / "arxiv" / "paper.pdf"
+
+
+def test_source_add_skips_same_notebook_source_with_different_workspace_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_vault(tmp_path)
+    note_path = tmp_path / "raw" / "paper-copy.md"
+    note_path.write_text(
+        "---\n"
+        "title: Paper Copy\n"
+        "source: https://example.com/paper\n"
+        "status: pending\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    manifest = SourceManifest.from_vault_root(tmp_path)
+    manifest.upsert(
+        SourceRecord(
+            workspace_key="raw/paper-original.md",
+            notebook_id="nb-topic",
+            source_ref="https://example.com/paper",
+            source_type="web",
+            local_path="raw/paper-original.md",
+            added_at="2026-05-16T10:00:00Z",
+            status="added",
+            title="Paper Original",
+            source_url="https://example.com/paper",
+        )
+    )
+    manifest.save()
+
+    def fail_run(*args: object, **kwargs: object) -> object:
+        raise AssertionError("same notebook/source should not call NotebookLM")
+
+    monkeypatch.setattr(source_add.notecraft, "run", fail_run, raising=True)
+
+    source_add.run(Note(note_path), arg="nb-topic")
+
+    reloaded = Note(note_path)
+    assert reloaded._post.metadata["source_add_status"] == "already-added"
+    assert reloaded._post.metadata["notecraft_source_ref"] == "https://example.com/paper"
+    assert reloaded._post.metadata["source_added_at"] == "2026-05-16T10:00:00Z"
 
 
 def test_source_add_skips_when_manifest_already_has_source(
